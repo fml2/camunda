@@ -8,7 +8,7 @@
 package io.camunda.application.commons.search;
 
 import io.camunda.application.commons.search.SearchClientDatabaseConfiguration.SearchClientProperties;
-import io.camunda.exporter.rdbms.sql.ProcessInstanceMapper;
+import io.camunda.db.rdbms.RdbmsService;
 import io.camunda.search.connect.configuration.ConnectConfiguration;
 import io.camunda.search.rdbms.RdbmsSearchClient;
 import io.camunda.zeebe.gateway.rest.ConditionalOnRestGatewayEnabled;
@@ -23,9 +23,9 @@ import org.springframework.context.annotation.Configuration;
 public class SearchClientDatabaseConfiguration {
 
   @Bean
-  public RdbmsSearchClient opensearchSearchClient(
-      final ProcessInstanceMapper processInstanceMapper) {
-    return new RdbmsSearchClient(processInstanceMapper);
+  public RdbmsSearchClient rdbmsSearchClient(
+      final RdbmsService rdbmsService) {
+    return new RdbmsSearchClient(rdbmsService);
   }
 
   @ConfigurationProperties("camunda.database")
