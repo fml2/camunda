@@ -14,17 +14,19 @@ import io.camunda.db.rdbms.domain.VariableModel;
 import io.camunda.zeebe.broker.SpringBrokerBridge;
 import io.camunda.zeebe.broker.exporter.context.ExporterContext;
 import io.camunda.zeebe.exporter.test.ExporterTestController;
+import io.camunda.zeebe.protocol.record.ImmutableRecord;
 import io.camunda.zeebe.protocol.record.Record;
 import io.camunda.zeebe.protocol.record.RecordValue;
 import io.camunda.zeebe.protocol.record.ValueType;
 import io.camunda.zeebe.protocol.record.intent.ProcessInstanceIntent;
-import io.camunda.zeebe.protocol.record.intent.ProcessIntent;
 import io.camunda.zeebe.protocol.record.intent.VariableIntent;
 import io.camunda.zeebe.protocol.record.value.BpmnElementType;
+import io.camunda.zeebe.protocol.record.value.ImmutableProcessInstanceRecordValue;
 import io.camunda.zeebe.protocol.record.value.ProcessInstanceRecordValue;
 import io.camunda.zeebe.protocol.record.value.VariableRecordValue;
 import io.camunda.zeebe.test.broker.protocol.ProtocolFactory;
 import java.util.List;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,15 +67,7 @@ class RdbmsExporterITest {
   @Test
   public void shouldExportProcessInstance() {
     // given
-    var processInstanceRecord = factory.generateRecordWithIntent(ValueType.PROCESS_INSTANCE, ProcessInstanceIntent.ELEMENT_ACTIVATING);
-    // TODO ... DIRTY!!!!!
-    while (true) {
-      processInstanceRecord = factory.generateRecordWithIntent(ValueType.PROCESS_INSTANCE, ProcessInstanceIntent.ELEMENT_ACTIVATING);
-      final ProcessInstanceRecordValue value = (ProcessInstanceRecordValue) processInstanceRecord.getValue();
-      if (value.getBpmnElementType() == BpmnElementType.PROCESS) {
-        break;
-      }
-    }
+    var processInstanceRecord = getProcessInstanceStartedRecord(1L);
 
     // when
     exporter.export(processInstanceRecord);
@@ -89,21 +83,15 @@ class RdbmsExporterITest {
   @Test
   public void shouldExportProcessInstanceAndVariables() {
     // given
-    var processInstanceRecord = factory.generateRecordWithIntent(ValueType.PROCESS_INSTANCE, ProcessInstanceIntent.ELEMENT_ACTIVATING);
-    // TODO ... DIRTY!!!!!
-    while (true) {
-      processInstanceRecord = factory.generateRecordWithIntent(ValueType.PROCESS_INSTANCE, ProcessInstanceIntent.ELEMENT_ACTIVATING);
-      final ProcessInstanceRecordValue value = (ProcessInstanceRecordValue) processInstanceRecord.getValue();
-      if (value.getBpmnElementType() == BpmnElementType.PROCESS) {
-        break;
-      }
-    }
-    final Record<RecordValue> variableCreated = factory.generateRecordWithIntent(ValueType.VARIABLE, VariableIntent.CREATED);
+    var processInstanceRecord = getProcessInstanceStartedRecord(1L);
+
+    final Record<RecordValue> variableCreated = ImmutableRecord.builder()
+        .from(factory.generateRecord(ValueType.VARIABLE))
+        .withIntent(VariableIntent.CREATED)
+        .withPosition(2L)
+        .withTimestamp(System.currentTimeMillis())
+        .build();
     final List<Record<RecordValue>> recordList = List.of(
-        factory.generateRecord(ValueType.PROCESS),
-        factory.generateRecord(ValueType.VARIABLE),
-        factory.generateRecord(ValueType.USER_TASK),
-        factory.generateRecord(ValueType.JOB),
         processInstanceRecord,
         variableCreated
     );
@@ -122,5 +110,20 @@ class RdbmsExporterITest {
     final VariableRecordValue variableRecordValue = (VariableRecordValue) variableCreated.getValue();
     assertThat(variable).isNotNull();
     assertThat(variable.value()).isEqualTo(variableRecordValue.getValue());
+  }
+
+  private @NotNull ImmutableRecord<RecordValue> getProcessInstanceStartedRecord(final Long position) {
+    final Record<RecordValue> recordValueRecord = factory.generateRecord(ValueType.PROCESS_INSTANCE);
+    return ImmutableRecord.builder()
+        .from(recordValueRecord)
+        .withIntent(ProcessInstanceIntent.ELEMENT_ACTIVATING)
+        .withPosition(position)
+        .withTimestamp(System.currentTimeMillis())
+        .withValue(
+            ImmutableProcessInstanceRecordValue.builder()
+                .from((ProcessInstanceRecordValue)recordValueRecord.getValue())
+                .withBpmnElementType(BpmnElementType.PROCESS)
+                .build())
+        .build();
   }
 }
