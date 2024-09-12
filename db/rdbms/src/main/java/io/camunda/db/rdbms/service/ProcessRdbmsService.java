@@ -16,12 +16,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class ProcessRdbmsService {
-
-  private static final Logger LOG = LoggerFactory.getLogger(ProcessRdbmsService.class);
 
   private final ExecutionQueue executionQueue;
   private final ProcessDefinitionMapper processDefinitionMapper;
@@ -55,6 +51,6 @@ public class ProcessRdbmsService {
       }
     }
 
-    return Optional.empty();
+    return Optional.ofNullable(cache.get(Pair.of(processDefinitionKey, version)));
   }
 }
