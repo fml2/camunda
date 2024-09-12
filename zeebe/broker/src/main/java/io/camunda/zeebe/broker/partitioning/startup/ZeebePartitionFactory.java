@@ -172,8 +172,7 @@ public final class ZeebePartitionFactory {
             gatewayBrokerTransport,
             topologyManager,
             meterRegistry,
-            springBrokerBridge
-        );
+            springBrokerBridge);
     context.setDynamicPartitionConfig(initialPartitionConfig);
 
     final PartitionTransition newTransitionBehavior = new PartitionTransitionImpl(TRANSITION_STEPS);

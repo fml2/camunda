@@ -40,9 +40,7 @@ public class RdbmsSearchClient implements ProcessInstanceSearchClient {
   }
 
   @Override
-  public void close() throws Exception {
-
-  }
+  public void close() throws Exception {}
 
   public String getBpmnProcessId(final SearchQuery searchQuery) {
     if (searchQuery.queryOption() instanceof final SearchTermQuery searchTermQuery) {
@@ -66,10 +64,16 @@ public class RdbmsSearchClient implements ProcessInstanceSearchClient {
   public Pair<String, List<String>> getVariables(final SearchQuery searchQuery) {
     if (searchQuery.queryOption() instanceof final SearchHasChildQuery searchHasChildQuery) {
       if (searchHasChildQuery.type().equalsIgnoreCase("variable")) {
-        final var queryOption = ((SearchBoolQuery) searchHasChildQuery.query().queryOption()).must();
-        final var varNameTerm = ((SearchTermQuery) queryOption.get(0).queryOption()).value().stringValue();
-        final var varValueTerm = (queryOption.get(1).queryOption() instanceof SearchTermQuery) ? List.of(((SearchTermQuery) queryOption.get(1).queryOption()).value().stringValue())
-            : ((SearchTermsQuery) queryOption.get(1).queryOption()).values().stream().map(TypedValue::stringValue).toList();
+        final var queryOption =
+            ((SearchBoolQuery) searchHasChildQuery.query().queryOption()).must();
+        final var varNameTerm =
+            ((SearchTermQuery) queryOption.get(0).queryOption()).value().stringValue();
+        final var varValueTerm =
+            (queryOption.get(1).queryOption() instanceof SearchTermQuery)
+                ? List.of(
+                    ((SearchTermQuery) queryOption.get(1).queryOption()).value().stringValue())
+                : ((SearchTermsQuery) queryOption.get(1).queryOption())
+                    .values().stream().map(TypedValue::stringValue).toList();
 
         return Pair.of(varNameTerm, varValueTerm);
       } else {

@@ -158,6 +158,4 @@ public final class ExporterDirectorContext {
      */
     PASSIVE
   }
-
-  ;
 }

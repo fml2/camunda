@@ -53,6 +53,3 @@ docker-compose up -d mariabb
 
 Run camunda with `rdbmsMariaDB` profile
 
-
-
-

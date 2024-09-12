@@ -312,8 +312,8 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
     }
 
     final ExporterContainer container =
-        new ExporterContainer(descriptor, partitionId, initializationInfo, meterRegistry, clock,
-            null);
+        new ExporterContainer(
+            descriptor, partitionId, initializationInfo, meterRegistry, clock, null);
     container.initContainer(actor, metrics, state, exporterPhase);
     try {
       container.configureExporter();
@@ -722,9 +722,7 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
    * @param metadataVersion the version of the metadata to initialize the exporter with
    * @param initializeFrom the id of the exporter to initialize the metadata of the exporter from
    */
-  public record ExporterInitializationInfo(long metadataVersion, String initializeFrom) {
-
-  }
+  public record ExporterInitializationInfo(long metadataVersion, String initializeFrom) {}
 
   private static class ExporterEventFilter implements EventFilter {
 

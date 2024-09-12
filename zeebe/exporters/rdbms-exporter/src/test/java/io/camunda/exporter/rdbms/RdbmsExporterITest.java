@@ -26,16 +26,13 @@ import io.camunda.zeebe.protocol.record.value.ProcessInstanceRecordValue;
 import io.camunda.zeebe.protocol.record.value.VariableRecordValue;
 import io.camunda.zeebe.test.broker.protocol.ProtocolFactory;
 import java.util.List;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/**
- * Base Class for all tests ... Uses H2
- */
+/** Base Class for all tests ... Uses H2 */
 @SpringBootTest(classes = {RdbmsTestConfiguration.class})
 @Testcontainers
 class RdbmsExporterITest {
@@ -46,28 +43,19 @@ class RdbmsExporterITest {
 
   private final ProtocolFactory factory = new ProtocolFactory();
 
-  @Autowired
-  private RdbmsService rdbmsService;
+  @Autowired private RdbmsService rdbmsService;
 
   @BeforeEach
   void setUp() {
     exporter.configure(
-        new ExporterContext(
-            null,
-            null,
-            0,
-            null,
-            null,
-            new SpringBrokerBridge(rdbmsService)
-        )
-    );
+        new ExporterContext(null, null, 0, null, null, new SpringBrokerBridge(rdbmsService)));
     exporter.open(controller);
   }
 
   @Test
   public void shouldExportProcessInstance() {
     // given
-    var processInstanceRecord = getProcessInstanceStartedRecord(1L);
+    final var processInstanceRecord = getProcessInstanceStartedRecord(1L);
 
     // when
     exporter.export(processInstanceRecord);
@@ -75,7 +63,8 @@ class RdbmsExporterITest {
     rdbmsService.executionQueue().flush();
 
     // then
-    final var key = ((ProcessInstanceRecordValue) processInstanceRecord.getValue()).getProcessInstanceKey();
+    final var key =
+        ((ProcessInstanceRecordValue) processInstanceRecord.getValue()).getProcessInstanceKey();
     final var processInstance = rdbmsService.getProcessInstanceRdbmsService().findOne(key);
     assertThat(processInstance).isNotNull();
   }
@@ -83,18 +72,16 @@ class RdbmsExporterITest {
   @Test
   public void shouldExportProcessInstanceAndVariables() {
     // given
-    var processInstanceRecord = getProcessInstanceStartedRecord(1L);
+    final var processInstanceRecord = getProcessInstanceStartedRecord(1L);
 
-    final Record<RecordValue> variableCreated = ImmutableRecord.builder()
-        .from(factory.generateRecord(ValueType.VARIABLE))
-        .withIntent(VariableIntent.CREATED)
-        .withPosition(2L)
-        .withTimestamp(System.currentTimeMillis())
-        .build();
-    final List<Record<RecordValue>> recordList = List.of(
-        processInstanceRecord,
-        variableCreated
-    );
+    final Record<RecordValue> variableCreated =
+        ImmutableRecord.builder()
+            .from(factory.generateRecord(ValueType.VARIABLE))
+            .withIntent(VariableIntent.CREATED)
+            .withPosition(2L)
+            .withTimestamp(System.currentTimeMillis())
+            .build();
+    final List<Record<RecordValue>> recordList = List.of(processInstanceRecord, variableCreated);
 
     // when
     recordList.forEach(record -> exporter.export(record));
@@ -102,18 +89,22 @@ class RdbmsExporterITest {
     rdbmsService.executionQueue().flush();
 
     // then
-    final var key = ((ProcessInstanceRecordValue) processInstanceRecord.getValue()).getProcessInstanceKey();
+    final var key =
+        ((ProcessInstanceRecordValue) processInstanceRecord.getValue()).getProcessInstanceKey();
     final var processInstance = rdbmsService.getProcessInstanceRdbmsService().findOne(key);
     assertThat(processInstance).isNotNull();
 
-    final VariableModel variable = rdbmsService.getVariableRdbmsService().findOne(variableCreated.getKey());
-    final VariableRecordValue variableRecordValue = (VariableRecordValue) variableCreated.getValue();
+    final VariableModel variable =
+        rdbmsService.getVariableRdbmsService().findOne(variableCreated.getKey());
+    final VariableRecordValue variableRecordValue =
+        (VariableRecordValue) variableCreated.getValue();
     assertThat(variable).isNotNull();
     assertThat(variable.value()).isEqualTo(variableRecordValue.getValue());
   }
 
-  private @NotNull ImmutableRecord<RecordValue> getProcessInstanceStartedRecord(final Long position) {
-    final Record<RecordValue> recordValueRecord = factory.generateRecord(ValueType.PROCESS_INSTANCE);
+  private ImmutableRecord<RecordValue> getProcessInstanceStartedRecord(final Long position) {
+    final Record<RecordValue> recordValueRecord =
+        factory.generateRecord(ValueType.PROCESS_INSTANCE);
     return ImmutableRecord.builder()
         .from(recordValueRecord)
         .withIntent(ProcessInstanceIntent.ELEMENT_ACTIVATING)
@@ -121,7 +112,7 @@ class RdbmsExporterITest {
         .withTimestamp(System.currentTimeMillis())
         .withValue(
             ImmutableProcessInstanceRecordValue.builder()
-                .from((ProcessInstanceRecordValue)recordValueRecord.getValue())
+                .from((ProcessInstanceRecordValue) recordValueRecord.getValue())
                 .withBpmnElementType(BpmnElementType.PROCESS)
                 .build())
         .build();
