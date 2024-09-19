@@ -67,13 +67,7 @@ public class ProcessInstanceRdbmsService {
   public SearchResult search(ProcessInstanceFilter filter) {
     LOG.trace("[RDBMS DB] Search for process instance with filter {}", filter);
     final var totalHits = processInstanceMapper.count(filter);
-    final var hits =
-        processInstanceMapper.search(
-            filter,
-            new RowBounds(
-                filter.offset() != null ? filter.offset() : RowBounds.NO_ROW_OFFSET,
-                filter.limit() != null ? filter.limit() : RowBounds.NO_ROW_LIMIT));
-
+    final var hits = processInstanceMapper.search(filter);
     return new SearchResult(hits, totalHits);
   }
 
