@@ -5,15 +5,12 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.optimize.upgrade.migrate313to86.indices;
+package io.camunda.optimize.upgrade.migrate313to86.indices.db;
 
-import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
-import co.elastic.clients.elasticsearch.indices.IndexSettings;
 import io.camunda.optimize.service.db.schema.DefaultIndexMappingCreator;
-import java.io.IOException;
 
-public class ImportIndexIndexV3 extends DefaultIndexMappingCreator<IndexSettings.Builder> {
+public abstract class ImportIndexIndexV3<TBuilder> extends DefaultIndexMappingCreator<TBuilder> {
 
   public static final int VERSION = 3;
 
@@ -36,17 +33,10 @@ public class ImportIndexIndexV3 extends DefaultIndexMappingCreator<IndexSettings
   }
 
   @Override
-  public TypeMapping.Builder addProperties(TypeMapping.Builder builder) {
-    // @formatter:off
-    return builder
-        .properties(ENGINE, Property.of(p -> p.keyword(t -> t)))
-        .properties(IMPORT_INDEX, Property.of(p -> p.long_(t -> t)));
-    // @formatter:on
-  }
+  public TypeMapping.Builder addProperties(final TypeMapping.Builder builder) {
 
-  @Override
-  public IndexSettings.Builder addStaticSetting(
-      final String key, final int value, final IndexSettings.Builder builder) throws IOException {
-    return builder.numberOfShards(Integer.toString(value));
+    return builder
+        .properties(ENGINE, p -> p.keyword(k -> k))
+        .properties(IMPORT_INDEX, p -> p.long_(k -> k));
   }
 }

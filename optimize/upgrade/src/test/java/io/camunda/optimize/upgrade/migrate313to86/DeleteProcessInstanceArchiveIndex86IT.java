@@ -20,7 +20,7 @@ public class DeleteProcessInstanceArchiveIndex86IT extends AbstractUpgrade86IT {
   public void deleteProcessInstanceArchiveIndex() {
     // given
     List<String> processInstanceArchiveIndexList =
-        prefixAwareClient.getAllIndexNames().stream()
+        getPrefixAwareClient().getAllIndexNames().stream()
             .filter(indexName -> indexName.contains("process-instance-archive-"))
             .toList();
     assertThat(processInstanceArchiveIndexList).hasSize(2);
@@ -30,7 +30,7 @@ public class DeleteProcessInstanceArchiveIndex86IT extends AbstractUpgrade86IT {
 
     // then
     List<String> processInstanceArchiveIndexListPostUpgrade =
-        prefixAwareClient.getAllIndexNames().stream()
+        getPrefixAwareClient().getAllIndexNames().stream()
             .filter(indexName -> indexName.contains("process-instance-archive-"))
             .toList();
     assertThat(processInstanceArchiveIndexListPostUpgrade).isEmpty();

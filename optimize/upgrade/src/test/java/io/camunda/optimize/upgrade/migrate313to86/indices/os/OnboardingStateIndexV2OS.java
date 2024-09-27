@@ -5,27 +5,18 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.optimize.upgrade.migrate313to86.indices;
+package io.camunda.optimize.upgrade.migrate313to86.indices.os;
 
-import co.elastic.clients.elasticsearch.indices.IndexSettings;
-import io.camunda.optimize.service.db.schema.index.ProcessDefinitionIndex;
+import io.camunda.optimize.upgrade.migrate313to86.indices.db.OnboardingStateIndexV2;
 import java.io.IOException;
+import org.opensearch.client.opensearch.indices.IndexSettings;
+import org.opensearch.client.opensearch.indices.IndexSettings.Builder;
 
-public class EventProcessDefinitionIndexV5 extends ProcessDefinitionIndex<IndexSettings.Builder> {
+public class OnboardingStateIndexV2OS extends OnboardingStateIndexV2<Builder> {
 
   @Override
   public IndexSettings.Builder addStaticSetting(
       final String key, final int value, final IndexSettings.Builder builder) throws IOException {
     return builder.numberOfShards(Integer.toString(value));
-  }
-
-  @Override
-  public String getIndexName() {
-    return "event-process-definition";
-  }
-
-  @Override
-  public int getVersion() {
-    return 5;
   }
 }
