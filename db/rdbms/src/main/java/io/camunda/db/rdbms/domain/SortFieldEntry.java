@@ -7,9 +7,4 @@
  */
 package io.camunda.db.rdbms.domain;
 
-public record SortFieldEntry(
-    SortField field,
-    SortDirection direction
-) {
-
-}
+public record SortFieldEntry(SortField field, SortDirection direction) {}

@@ -10,5 +10,4 @@ package io.camunda.db.rdbms.domain;
 public interface SortField {
 
   String getFieldName();
-
 }

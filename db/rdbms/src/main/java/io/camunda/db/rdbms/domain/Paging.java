@@ -7,9 +7,4 @@
  */
 package io.camunda.db.rdbms.domain;
 
-public record Paging(
-    Integer pageSize,
-    Integer offset
-) {
-
-}
+public record Paging(Integer pageSize, Integer offset) {}

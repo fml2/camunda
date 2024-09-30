@@ -56,7 +56,7 @@ public class RdbmsConfiguration {
     factoryBean.addMapperLocations(
         new PathMatchingResourcePatternResolver().getResources("classpath*:mapper/*.xml"));
 
-    Properties p = new Properties();
+    final Properties p = new Properties();
     p.put("paging.before", "");
     p.put("paging.after", "LIMIT #{paging.pageSize}, OFFSET #{paging.offset}");
 

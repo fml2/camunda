@@ -15,18 +15,10 @@ import io.camunda.db.rdbms.sql.ProcessDefinitionMapper;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ProcessRdbmsService {
-
-  private record CacheKey(
-      Long processDefinitionKey,
-      Long version
-  ) {
-
-  }
 
   private static final Logger LOG = LoggerFactory.getLogger(ProcessRdbmsService.class);
 
@@ -53,8 +45,9 @@ public class ProcessRdbmsService {
       final Long processDefinitionKey, final long version) {
     final var cacheKey = new CacheKey(processDefinitionKey, version);
     if (!cache.containsKey(cacheKey)) {
-      final var result = processDefinitionMapper.findOne(
-          Map.of("processDefinitionKey", processDefinitionKey, "version", version));
+      final var result =
+          processDefinitionMapper.findOne(
+              Map.of("processDefinitionKey", processDefinitionKey, "version", version));
 
       if (result != null) {
         cache.put(cacheKey, result);
@@ -64,4 +57,6 @@ public class ProcessRdbmsService {
 
     return Optional.ofNullable(cache.get(cacheKey));
   }
+
+  private record CacheKey(Long processDefinitionKey, Long version) {}
 }

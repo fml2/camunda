@@ -11,18 +11,13 @@ import java.util.Collection;
 import java.util.List;
 
 public record ProcessInstanceFilter(
-    String bpmnProcessId,
-    VariableFilter variable,
-    Paging paging,
-    List<SortFieldEntry> sortFields
-    ) {
+    String bpmnProcessId, VariableFilter variable, Paging paging, List<SortFieldEntry> sortFields) {
 
   public record VariableFilter(String name, Collection<String> values) {}
 
   public enum ProcessInstanceSortField implements SortField {
     PROCESS_INSTANCE_KEY("PROCESS_INSTANCE_KEY"),
-    START_DATE("START_DATE"),
-    ;
+    START_DATE("START_DATE");
 
     private final String fieldName;
 
