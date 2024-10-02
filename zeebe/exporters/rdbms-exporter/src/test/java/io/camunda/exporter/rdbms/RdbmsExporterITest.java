@@ -11,7 +11,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.db.rdbms.RdbmsService;
 import io.camunda.db.rdbms.domain.VariableModel;
-import io.camunda.zeebe.broker.SpringBrokerBridge;
 import io.camunda.zeebe.broker.exporter.context.ExporterContext;
 import io.camunda.zeebe.exporter.test.ExporterTestController;
 import io.camunda.zeebe.protocol.record.ImmutableRecord;
@@ -39,16 +38,17 @@ class RdbmsExporterITest {
 
   private final ExporterTestController controller = new ExporterTestController();
 
-  private final RdbmsExporter exporter = new RdbmsExporter();
 
   private final ProtocolFactory factory = new ProtocolFactory();
 
   @Autowired private RdbmsService rdbmsService;
 
+  private final RdbmsExporter exporter = new RdbmsExporter(rdbmsService);
+
   @BeforeEach
   void setUp() {
     exporter.configure(
-        new ExporterContext(null, null, 0, null, null, new SpringBrokerBridge(rdbmsService)));
+        new ExporterContext(null, null, 0, null, null, null));
     exporter.open(controller);
   }
 

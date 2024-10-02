@@ -83,7 +83,8 @@ zeebe:
       ioThreadCount: 2
     exporters:
       rdbms:
-        className: io.camunda.exporter.rdbms.RdbmsExporter
+        # Classname doesn't matter, since this exporter is present via spring bean
+        className: RdbmsExporter
       #elasticsearch:
       #  className: io.camunda.zeebe.exporter.ElasticsearchExporter
       #  args:
