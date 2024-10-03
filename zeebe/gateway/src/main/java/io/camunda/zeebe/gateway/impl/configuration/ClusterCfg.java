@@ -42,6 +42,7 @@ public final class ClusterCfg {
   private MembershipCfg membership = new MembershipCfg();
   private SecurityCfg security = new SecurityCfg();
   private CompressionAlgorithm messageCompression = CompressionAlgorithm.NONE;
+  private DynamicConfigCfg dynamicConfig = DynamicConfigCfg.defaultConfig();
 
   public String getMemberId() {
     return memberId;
@@ -156,6 +157,14 @@ public final class ClusterCfg {
     return this;
   }
 
+  public DynamicConfigCfg getDynamicConfig() {
+    return dynamicConfig;
+  }
+
+  public void setDynamicConfig(final DynamicConfigCfg dynamicConfig) {
+    this.dynamicConfig = dynamicConfig;
+  }
+
   @Override
   public int hashCode() {
     return Objects.hash(
@@ -167,7 +176,8 @@ public final class ClusterCfg {
         port,
         membership,
         security,
-        messageCompression);
+        messageCompression,
+        dynamicConfig);
   }
 
   @Override
@@ -187,7 +197,8 @@ public final class ClusterCfg {
         && Objects.equals(host, that.host)
         && Objects.equals(membership, that.membership)
         && Objects.equals(security, that.security)
-        && Objects.equals(messageCompression, that.messageCompression);
+        && Objects.equals(messageCompression, that.messageCompression)
+        && Objects.equals(dynamicConfig, that.dynamicConfig);
   }
 
   @Override
@@ -214,6 +225,8 @@ public final class ClusterCfg {
         + security
         + ", messageCompression="
         + messageCompression
+        + ", dynamicConfig="
+        + dynamicConfig
         + '}';
   }
 }

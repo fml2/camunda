@@ -14,10 +14,12 @@ import static org.mockito.Mockito.mock;
 import io.atomix.cluster.AtomixCluster;
 import io.camunda.zeebe.broker.client.api.BrokerClient;
 import io.camunda.zeebe.broker.system.configuration.BrokerCfg;
+import io.camunda.zeebe.broker.system.configuration.DynamicConfigCfg;
 import io.camunda.zeebe.broker.system.configuration.backup.BackupStoreCfg.BackupStoreType;
 import io.camunda.zeebe.broker.system.configuration.partitioning.FixedPartitionCfg;
 import io.camunda.zeebe.broker.system.configuration.partitioning.FixedPartitionCfg.NodeCfg;
 import io.camunda.zeebe.broker.system.configuration.partitioning.Scheme;
+import io.camunda.zeebe.dynamic.config.gossip.ClusterConfigurationGossiperConfig;
 import io.camunda.zeebe.scheduler.ActorScheduler;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import java.io.File;
@@ -330,5 +332,94 @@ final class SystemContextTest {
   private SystemContext initSystemContext(final BrokerCfg brokerCfg) {
     return new SystemContext(
         brokerCfg, mock(ActorScheduler.class), mock(AtomixCluster.class), mock(BrokerClient.class));
+  }
+
+  @Test
+  void shouldThrowInvalidConfigExceptionWhenDynamicConfigHasNegativeValues() {
+    // given
+    final var brokerCfg = new BrokerCfg();
+    final var clusterCfg = brokerCfg.getCluster();
+
+    final var invalidDynamicConfig =
+        new DynamicConfigCfg(
+            new ClusterConfigurationGossiperConfig(
+                true, Duration.ofSeconds(10).negated(), Duration.ofSeconds(10).negated(), -1));
+    clusterCfg.setDynamicConfig(invalidDynamicConfig);
+
+    // when
+    assertThatCode(() -> initSystemContext(brokerCfg))
+        // then
+        .isInstanceOf(InvalidConfigurationException.class)
+        .hasMessageStartingWith("Invalid DynamicConfiguration:")
+        .hasMessageContaining(
+            String.format("syncDelay must be positive: configured value = %d ms", -10000))
+        .hasMessageContaining(
+            String.format("syncRequestTimeout must be positive: configured value = %s ms", -10000))
+        .hasMessageContaining(
+            String.format("gossipFanout must be greater than 1: configured value = %d", -1));
+  }
+
+  @Test
+  void shouldThrowInvalidConfigExceptionWhenDynamicConfigHasZeroValues() {
+    // given
+    final var brokerCfg = new BrokerCfg();
+    final var clusterCfg = brokerCfg.getCluster();
+
+    final var invalidDynamicConfig =
+        new DynamicConfigCfg(
+            new ClusterConfigurationGossiperConfig(
+                true, Duration.ofSeconds(0), Duration.ofSeconds(0), 0));
+    clusterCfg.setDynamicConfig(invalidDynamicConfig);
+
+    // when
+    assertThatCode(() -> initSystemContext(brokerCfg))
+        // then
+        .isInstanceOf(InvalidConfigurationException.class)
+        .hasMessageStartingWith("Invalid DynamicConfiguration:")
+        .hasMessageContaining(
+            String.format("syncDelay must be positive: configured value = %d ms", 0))
+        .hasMessageContaining(
+            String.format("syncRequestTimeout must be positive: configured value = %s ms", 0))
+        .hasMessageContaining(
+            String.format("gossipFanout must be greater than 1: configured value = %d", 0));
+  }
+
+  @Test
+  void shouldThrowInvalidConfigExceptionWhenDynamicConfigHasGossipFanoutTooSmall() {
+    // given
+    final var brokerCfg = new BrokerCfg();
+    final var clusterCfg = brokerCfg.getCluster();
+
+    final var invalidDynamicConfig =
+        new DynamicConfigCfg(
+            new ClusterConfigurationGossiperConfig(
+                true, Duration.ofSeconds(1), Duration.ofSeconds(1), 1));
+    clusterCfg.setDynamicConfig(invalidDynamicConfig);
+
+    // when
+    assertThatCode(() -> initSystemContext(brokerCfg))
+        // then
+        .isInstanceOf(InvalidConfigurationException.class)
+        .hasMessageStartingWith("Invalid DynamicConfiguration:")
+        .hasMessageContaining(
+            String.format("gossipFanout must be greater than 1: configured value = %d", 1));
+  }
+
+  @Test
+  void shouldAllowInvalidSyncValuesInDynamicConfigIfSyncIsNotEnabled() {
+    // given
+    final var brokerCfg = new BrokerCfg();
+    final var clusterCfg = brokerCfg.getCluster();
+
+    final var validConfig =
+        new DynamicConfigCfg(
+            new ClusterConfigurationGossiperConfig(
+                false, Duration.ofSeconds(1).negated(), Duration.ofSeconds(1).negated(), 3));
+    clusterCfg.setDynamicConfig(validConfig);
+
+    // when
+    assertThatCode(() -> initSystemContext(brokerCfg))
+        // then
+        .doesNotThrowAnyException();
   }
 }

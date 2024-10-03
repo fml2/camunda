@@ -1,0 +1,9 @@
+zeebe:
+  broker:
+    cluster:
+      dynamic-config:
+        gossip:
+          enable-sync: false
+          sync-delay: 10s
+          sync-request-timeout: 30s
+          gossip-fanout: 10
