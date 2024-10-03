@@ -21,6 +21,7 @@ import io.camunda.zeebe.broker.system.configuration.ClusterCfg;
 import io.camunda.zeebe.broker.system.configuration.DataCfg;
 import io.camunda.zeebe.broker.system.configuration.DiskCfg.FreeSpaceCfg;
 import io.camunda.zeebe.broker.system.configuration.ExperimentalCfg;
+import io.camunda.zeebe.broker.system.configuration.ExporterCfg;
 import io.camunda.zeebe.broker.system.configuration.SecurityCfg;
 import io.camunda.zeebe.broker.system.configuration.backup.AzureBackupStoreConfig;
 import io.camunda.zeebe.broker.system.configuration.backup.BackupStoreCfg;
@@ -38,7 +39,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 
 public final class SystemContext {
@@ -110,9 +113,24 @@ public final class SystemContext {
 
     validateExperimentalConfigs(cluster, brokerCfg.getExperimental());
 
+    validateExporters(brokerCfg.getExporters());
+
     final var security = brokerCfg.getNetwork().getSecurity();
     if (security.isEnabled()) {
       validateNetworkSecurityConfig(security);
+    }
+  }
+
+  private void validateExporters(final Map<String, ExporterCfg> exporters) {
+    final Set<Entry<String, ExporterCfg>> entries = exporters.entrySet();
+    final Stream<Entry<String, ExporterCfg>> badExporters =
+        entries.stream().filter(entry -> entry.getValue().getClassName() == null);
+    final var badExportersNames = badExporters.map(Entry::getKey).sorted().toList();
+
+    if (!badExportersNames.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Expected to find a 'className' configured for the exporter. Couldn't find a valid one for the following exporters "
+              + badExportersNames);
     }
   }
 
