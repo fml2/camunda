@@ -28,6 +28,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class GcsBackupStore implements BackupStore {
   public static final String ERROR_MSG_BACKUP_NOT_FOUND =
@@ -37,6 +39,7 @@ public final class GcsBackupStore implements BackupStore {
   public static final String ERROR_MSG_ACCESS_FAILED = "Expected to access bucket '%s', but failed";
   public static final String SNAPSHOT_FILESET_NAME = "snapshot";
   public static final String SEGMENTS_FILESET_NAME = "segments";
+  private static final Logger LOG = LoggerFactory.getLogger(GcsBackupStore.class);
   private final ExecutorService executor;
   private final ManifestManager manifestManager;
   private final FileSetManager fileSetManager;
@@ -168,7 +171,13 @@ public final class GcsBackupStore implements BackupStore {
 
   public static void validateConfig(final GcsBackupConfig config) {
     try (final var storage = buildClient(config)) {
-      storage.list(config.bucketName(), BlobListOption.pageSize(1));
+      try {
+        storage.list(config.bucketName(), BlobListOption.pageSize(1));
+      } catch (final Exception e) {
+        LOG.warn(
+            "Unable to verify that the bucket exists, initialization will continue as it can be a transient network issue",
+            e);
+      }
     } catch (final Exception e) {
       throw new CouldNotAccessBucketException(
           ERROR_MSG_ACCESS_FAILED.formatted(config.bucketName()), e);
