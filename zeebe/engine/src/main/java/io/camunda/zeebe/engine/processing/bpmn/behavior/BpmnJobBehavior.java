@@ -7,16 +7,18 @@
  */
 package io.camunda.zeebe.engine.processing.bpmn.behavior;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import io.camunda.zeebe.el.Expression;
 import io.camunda.zeebe.engine.metrics.JobMetrics;
 import io.camunda.zeebe.engine.processing.bpmn.BpmnElementContext;
 import io.camunda.zeebe.engine.processing.common.ExpressionProcessor;
 import io.camunda.zeebe.engine.processing.common.Failure;
-import io.camunda.zeebe.engine.processing.deployment.model.element.ExecutableFlowElement;
 import io.camunda.zeebe.engine.processing.deployment.model.element.ExecutableJobWorkerElement;
 import io.camunda.zeebe.engine.processing.deployment.model.element.ExecutionListener;
 import io.camunda.zeebe.engine.processing.deployment.model.element.JobWorkerProperties;
+import io.camunda.zeebe.engine.processing.deployment.model.element.TaskListener;
 import io.camunda.zeebe.engine.processing.deployment.model.transformer.ExpressionTransformer;
 import io.camunda.zeebe.engine.processing.streamprocessor.writers.StateWriter;
 import io.camunda.zeebe.engine.processing.streamprocessor.writers.Writers;
@@ -24,9 +26,11 @@ import io.camunda.zeebe.engine.state.immutable.JobState;
 import io.camunda.zeebe.engine.state.immutable.JobState.State;
 import io.camunda.zeebe.engine.state.instance.ElementInstance;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListenerEventType;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListenerEventType;
 import io.camunda.zeebe.msgpack.value.DocumentValue;
 import io.camunda.zeebe.protocol.Protocol;
 import io.camunda.zeebe.protocol.impl.record.value.job.JobRecord;
+import io.camunda.zeebe.protocol.impl.record.value.usertask.UserTaskRecord;
 import io.camunda.zeebe.protocol.record.intent.JobIntent;
 import io.camunda.zeebe.protocol.record.value.ErrorType;
 import io.camunda.zeebe.protocol.record.value.JobKind;
@@ -39,8 +43,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import org.agrona.DirectBuffer;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +56,7 @@ public final class BpmnJobBehavior {
       LoggerFactory.getLogger(BpmnJobBehavior.class.getPackageName());
   private static final Set<State> CANCELABLE_STATES =
       EnumSet.of(State.ACTIVATABLE, State.ACTIVATED, State.FAILED, State.ERROR_THROWN);
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private final JobRecord jobRecord = new JobRecord().setVariables(DocumentValue.EMPTY_DOCUMENT);
   private final HeaderEncoder headerEncoder = new HeaderEncoder(LOGGER);
@@ -135,12 +142,12 @@ public final class BpmnJobBehavior {
     return list == null ? null : ExpressionTransformer.asListLiteral(list);
   }
 
-  private static JobListenerEventType fromExecutionListenerEventType(
-      final ZeebeExecutionListenerEventType eventType) {
-    return switch (eventType) {
-      case start -> JobListenerEventType.START;
-      case end -> JobListenerEventType.END;
-    };
+  private static String asNotEmptyListLiteralOrNull(final List<String> list) {
+    return list == null || list.isEmpty() ? null : ExpressionTransformer.asListLiteral(list);
+  }
+
+  private static String notBlankOrNull(final String input) {
+    return StringUtils.isBlank(input) ? null : input;
   }
 
   public void createNewJob(
@@ -150,17 +157,14 @@ public final class BpmnJobBehavior {
 
     writeJobCreatedEvent(
         context,
-        element,
         jobProperties,
         JobKind.BPMN_ELEMENT,
         JobListenerEventType.UNSPECIFIED,
         element.getJobWorkerProperties().getTaskHeaders());
-    jobMetrics.jobCreated(jobProperties.getType(), JobKind.BPMN_ELEMENT);
   }
 
   public void createNewExecutionListenerJob(
       final BpmnElementContext context,
-      final ExecutableFlowElement element,
       final JobProperties jobProperties,
       final ExecutionListener executionListener) {
 
@@ -168,12 +172,94 @@ public final class BpmnJobBehavior {
         fromExecutionListenerEventType(executionListener.getEventType());
     writeJobCreatedEvent(
         context,
-        element,
         jobProperties,
         JobKind.EXECUTION_LISTENER,
         jobListenerEventType,
         Collections.emptyMap());
-    jobMetrics.jobCreated(jobProperties.getType(), JobKind.EXECUTION_LISTENER);
+  }
+
+  public void createNewTaskListenerJob(
+      final BpmnElementContext context,
+      final UserTaskRecord taskRecordValue,
+      final TaskListener listener) {
+    evaluateTaskListenerJobExpressions(listener.getJobWorkerProperties(), context, taskRecordValue)
+        .thenDo(
+            listenerJobProperties ->
+                writeJobCreatedEvent(
+                    context,
+                    listenerJobProperties,
+                    JobKind.TASK_LISTENER,
+                    fromTaskListenerEventType(listener.getEventType()),
+                    extractUserTaskHeaders(taskRecordValue)))
+        .ifLeft(failure -> incidentBehavior.createIncident(failure, context));
+  }
+
+  private Either<Failure, JobProperties> evaluateTaskListenerJobExpressions(
+      final JobWorkerProperties jobWorkerProps,
+      final BpmnElementContext context,
+      final UserTaskRecord taskRecordValue) {
+    final var scopeKey = context.getElementInstanceKey();
+    return Either.<Failure, JobProperties>right(new JobProperties())
+        // Evaluate and set basic job properties
+        .flatMap(p -> evalTypeExp(jobWorkerProps.getType(), scopeKey).map(p::type))
+        .flatMap(p -> evalRetriesExp(jobWorkerProps.getRetries(), scopeKey).map(p::retries))
+        // Handle user task-related properties
+        .map(
+            p ->
+                Optional.of(taskRecordValue.getFormKey())
+                    .filter(formKey -> formKey > 0)
+                    .map(Objects::toString)
+                    .map(p::formKey)
+                    .orElse(p))
+        .map(
+            p ->
+                Optional.of(taskRecordValue.getAssignee())
+                    .map(BpmnJobBehavior::notBlankOrNull)
+                    .map(p::assignee)
+                    .orElse(p))
+        .map(
+            p ->
+                Optional.of(taskRecordValue.getCandidateGroupsList())
+                    .map(BpmnJobBehavior::asNotEmptyListLiteralOrNull)
+                    .map(p::candidateGroups)
+                    .orElse(p))
+        .map(
+            p ->
+                Optional.of(taskRecordValue.getCandidateUsersList())
+                    .map(BpmnJobBehavior::asNotEmptyListLiteralOrNull)
+                    .map(p::candidateUsers)
+                    .orElse(p))
+        .map(
+            p ->
+                Optional.of(taskRecordValue.getDueDate())
+                    .map(BpmnJobBehavior::notBlankOrNull)
+                    .map(p::dueDate)
+                    .orElse(p))
+        .map(
+            p ->
+                Optional.of(taskRecordValue.getFollowUpDate())
+                    .map(BpmnJobBehavior::notBlankOrNull)
+                    .map(p::followUpDate)
+                    .orElse(p));
+  }
+
+  private static JobListenerEventType fromExecutionListenerEventType(
+      final ZeebeExecutionListenerEventType eventType) {
+    return switch (eventType) {
+      case start -> JobListenerEventType.START;
+      case end -> JobListenerEventType.END;
+    };
+  }
+
+  private static JobListenerEventType fromTaskListenerEventType(
+      final ZeebeTaskListenerEventType eventType) {
+    return switch (eventType) {
+      case assigning -> JobListenerEventType.ASSIGNING;
+      case updating -> JobListenerEventType.UPDATING;
+      case completing -> JobListenerEventType.COMPLETING;
+      default ->
+          throw new IllegalStateException("Unexpected ZeebeTaskListenerEventType: " + eventType);
+    };
   }
 
   private Either<Failure, String> evalTypeExp(final Expression type, final long scopeKey) {
@@ -198,7 +284,6 @@ public final class BpmnJobBehavior {
 
   private void writeJobCreatedEvent(
       final BpmnElementContext context,
-      final ExecutableFlowElement element,
       final JobProperties props,
       final JobKind jobKind,
       final JobListenerEventType jobListenerEventType,
@@ -216,13 +301,14 @@ public final class BpmnJobBehavior {
         .setProcessDefinitionVersion(context.getProcessVersion())
         .setProcessDefinitionKey(context.getProcessDefinitionKey())
         .setProcessInstanceKey(context.getProcessInstanceKey())
-        .setElementId(element.getId())
+        .setElementId(context.getElementId())
         .setElementInstanceKey(context.getElementInstanceKey())
         .setTenantId(context.getTenantId());
 
     final var jobKey = keyGenerator.nextKey();
     stateWriter.appendFollowUpEvent(jobKey, JobIntent.CREATED, jobRecord);
     jobActivationBehavior.publishWork(jobKey, jobRecord);
+    jobMetrics.jobCreated(props.getType(), jobKind);
   }
 
   private DirectBuffer encodeHeaders(
@@ -234,6 +320,7 @@ public final class BpmnJobBehavior {
     final String dueDate = props.getDueDate();
     final String followUpDate = props.getFollowUpDate();
     final String formKey = props.getFormKey();
+    final List<LinkedResource> linkedResources = props.getLinkedResources();
 
     if (assignee != null && !assignee.isEmpty()) {
       headers.put(Protocol.USER_TASK_ASSIGNEE_HEADER_NAME, assignee);
@@ -253,7 +340,36 @@ public final class BpmnJobBehavior {
     if (formKey != null && !formKey.isEmpty()) {
       headers.put(Protocol.USER_TASK_FORM_KEY_HEADER_NAME, formKey);
     }
+    if (linkedResources != null && !linkedResources.isEmpty()) {
+      try {
+        final String linkedResourcesJson = OBJECT_MAPPER.writeValueAsString(linkedResources);
+        headers.put(Protocol.LINKED_RESOURCES_HEADER_NAME, linkedResourcesJson);
+      } catch (final JsonProcessingException e) {
+        throw new IllegalArgumentException(
+            "Failed to convert linked resource headers to json object", e);
+      }
+    }
     return headerEncoder.encode(headers);
+  }
+
+  private Map<String, String> extractUserTaskHeaders(final UserTaskRecord userTaskRecord) {
+    final var headers = new HashMap<String, String>();
+
+    if (userTaskRecord.getUserTaskKey() > 0) {
+      headers.put(
+          Protocol.USER_TASK_KEY_HEADER_NAME, String.valueOf(userTaskRecord.getUserTaskKey()));
+    }
+
+    if (userTaskRecord.getPriority() > 0) {
+      headers.put(
+          Protocol.USER_TASK_PRIORITY_HEADER_NAME, String.valueOf(userTaskRecord.getPriority()));
+    }
+
+    if (StringUtils.isNotEmpty(userTaskRecord.getAction())) {
+      headers.put(Protocol.USER_TASK_ACTION_HEADER_NAME, userTaskRecord.getAction());
+    }
+
+    return Collections.unmodifiableMap(headers);
   }
 
   public void cancelJob(final BpmnElementContext context) {
@@ -290,6 +406,7 @@ public final class BpmnJobBehavior {
     private String dueDate;
     private String followUpDate;
     private String formKey;
+    private List<LinkedResource> linkedResources;
 
     public JobProperties type(final String type) {
       this.type = type;
@@ -361,6 +478,45 @@ public final class BpmnJobBehavior {
 
     public String getFormKey() {
       return formKey;
+    }
+
+    public JobProperties linkedResources(final List<LinkedResource> linkedResources) {
+      this.linkedResources = linkedResources;
+      return this;
+    }
+
+    public List<LinkedResource> getLinkedResources() {
+      return linkedResources;
+    }
+  }
+
+  public static final class LinkedResource {
+    private String resourceKey;
+    private String resourceType;
+    private String linkName;
+
+    public String getResourceKey() {
+      return resourceKey;
+    }
+
+    public void setResourceKey(final String resourceKey) {
+      this.resourceKey = resourceKey;
+    }
+
+    public String getResourceType() {
+      return resourceType;
+    }
+
+    public void setResourceType(final String resourceType) {
+      this.resourceType = resourceType;
+    }
+
+    public String getLinkName() {
+      return linkName;
+    }
+
+    public void setLinkName(final String linkName) {
+      this.linkName = linkName;
     }
   }
 }

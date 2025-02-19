@@ -28,19 +28,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import lombok.Getter;
-import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 
-@Slf4j
-public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER> {
+public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER, ALIASES> {
+
+  private static final Logger LOG = org.slf4j.LoggerFactory.getLogger(SchemaUpgradeClient.class);
+  public DatabaseType databaseType;
   // expected suffix: hyphen and numbers at end of index name
   protected final Pattern indexSuffixPattern = Pattern.compile("-\\d+$");
   protected final DatabaseSchemaManager<CLIENT, BUILDER> schemaManager;
   protected final DatabaseMetadataService<CLIENT> metadataService;
   protected final CLIENT databaseClient;
-  @Getter public DatabaseType databaseType;
   protected final TaskRepository taskRepository;
 
   public SchemaUpgradeClient(
@@ -97,11 +97,18 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
   public abstract void deleteDataByIndexName(
       final IndexMappingCreator<BUILDER> indexMapping, final DatabaseQueryWrapper queryWrapper);
 
-  public abstract void updateIndex(
+  public void updateIndex(
       final IndexMappingCreator<BUILDER> indexMapping,
       final String mappingScript,
       final Map<String, Object> parameters,
-      final Set<String> additionalReadAliases);
+      final Set<String> additionalReadAliases) {
+    if (indexMapping.isCreateFromTemplate()) {
+      updateIndexTemplateAndAssociatedIndexes(
+          indexMapping, mappingScript, parameters, additionalReadAliases);
+    } else {
+      migrateSingleIndex(indexMapping, mappingScript, parameters, additionalReadAliases);
+    }
+  }
 
   public static String createReIndexRequestDescription(
       final List<String> sourceIndex, final String targetIndex) {
@@ -112,7 +119,7 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
     if (indexExists(indexName)) {
       try {
         databaseClient.deleteIndexByRawIndexNames(indexName);
-      } catch (Exception e) {
+      } catch (final Exception e) {
         throw new UpgradeRuntimeException(
             String.format("Could not delete index [%s]!", indexName), e);
       }
@@ -120,9 +127,12 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
   }
 
   // Returns index names that are associated with the given aliasName
-  @SneakyThrows
   public Set<String> getAliases(final String aliasName) {
-    return databaseClient.getAllIndicesForAlias(aliasName);
+    try {
+      return databaseClient.getAllIndicesForAlias(aliasName);
+    } catch (final IOException e) {
+      throw new OptimizeRuntimeException(e);
+    }
   }
 
   public void reindex(final String sourceIndex, final String targetIndex) {
@@ -156,7 +166,7 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
   }
 
   public void updateOptimizeVersion(final UpgradePlan upgradePlan) {
-    log.info(
+    LOG.info(
         "Updating Optimize data structure version tag from {} to {}.",
         upgradePlan.getFromVersion().toString(),
         upgradePlan.getToVersion().toString());
@@ -174,14 +184,14 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
   }
 
   public boolean indexExists(final String indexName) {
-    log.debug("Checking if index exists [{}].", indexName);
+    LOG.debug("Checking if index exists [{}].", indexName);
     return schemaManager.indexExists(databaseClient, indexName);
   }
 
   public void waitUntilTaskIsFinished(final String taskId, final String taskIdentifier) {
     try {
       taskRepository.waitUntilTaskIsFinished(taskId, taskIdentifier);
-    } catch (OptimizeRuntimeException e) {
+    } catch (final OptimizeRuntimeException e) {
       throw new UpgradeRuntimeException(e.getCause().getMessage(), e);
     }
   }
@@ -191,11 +201,11 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
       final long sourceIndexDocCount = databaseClient.countWithoutPrefix(sourceIndex);
       final long targetIndexDocCount = databaseClient.countWithoutPrefix(targetIndex);
       return sourceIndexDocCount == targetIndexDocCount;
-    } catch (Exception e) {
+    } catch (final Exception e) {
       final String errorMessage =
           String.format(
               "Could not compare doc counts of index [%s] and [%s].", sourceIndex, targetIndex);
-      log.warn(errorMessage, e);
+      LOG.warn(errorMessage, e);
       throw new OptimizeRuntimeException(errorMessage, e);
     }
   }
@@ -226,7 +236,7 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
 
   protected void applyAdditionalReadOnlyAliasesToIndex(
       final Set<String> additionalReadAliases, final String indexName) {
-    for (String alias : additionalReadAliases) {
+    for (final String alias : additionalReadAliases) {
       addAlias(getIndexNameService().getOptimizeIndexAliasForIndex(alias), indexName, false);
     }
   }
@@ -235,11 +245,107 @@ public abstract class SchemaUpgradeClient<CLIENT extends DatabaseClient, BUILDER
       throws UpgradeRuntimeException, IOException {
     try {
       taskRepository.validateTaskResponse(taskRepository.getTaskResponse(reindexTaskId));
-    } catch (OptimizeRuntimeException ex) {
+    } catch (final OptimizeRuntimeException ex) {
       throw new UpgradeRuntimeException(
           String.format(
               "Found pending task with id %s, but it is not in a completable state", reindexTaskId),
           ex);
     }
   }
+
+  public DatabaseType getDatabaseType() {
+    return databaseType;
+  }
+
+  private void updateIndexTemplateAndAssociatedIndexes(
+      final IndexMappingCreator<BUILDER> index,
+      final String mappingScript,
+      final Map<String, Object> parameters,
+      final Set<String> additionalReadAliases) {
+    final String indexAlias = getIndexAlias(index);
+    final String sourceTemplateName = getSourceIndexOrTemplateName(index, indexAlias);
+    // create new template & indices and reindex data to it
+    createOrUpdateTemplateWithoutAliases(index);
+    final Set<String> indexAliases = getAliases(indexAlias);
+    // this ensures the migration happens in a consistent order
+    final List<String> sortedIndices =
+        indexAliases.stream()
+            // we are only interested in indices based on the source template
+            // in resumed update scenarios this could also contain indices based on the
+            // targetTemplateName already
+            // which we don't need to care about
+            .filter(indexName -> indexName.contains(sourceTemplateName))
+            .sorted()
+            .toList();
+    for (final String sourceIndex : sortedIndices) {
+      final String suffix;
+      final Matcher suffixMatcher = indexSuffixPattern.matcher(sourceIndex);
+      if (suffixMatcher.find()) {
+        // sourceIndex is already suffixed
+        suffix = sourceIndex.substring(sourceIndex.lastIndexOf("-"));
+      } else {
+        // sourceIndex is not yet suffixed, use default suffix
+        suffix = index.getIndexNameInitialSuffix();
+      }
+
+      final String targetIndexName =
+          getIndexNameService().getOptimizeIndexTemplateNameWithVersion(index) + suffix;
+
+      final ALIASES existingAliases = getAllAliasesForIndex(sourceIndex);
+      setAllAliasesToReadOnly(sourceIndex, existingAliases);
+      createIndexFromTemplate(targetIndexName);
+      reindex(sourceIndex, targetIndexName, mappingScript, parameters);
+      applyAliasesToIndex(targetIndexName, existingAliases);
+      applyAdditionalReadOnlyAliasesToIndex(additionalReadAliases, targetIndexName);
+      // for rolled over indices only the last one is eligible as writeIndex
+      if (sortedIndices.indexOf(sourceIndex) == sortedIndices.size() - 1) {
+        // in case of retries it might happen that the default write index flag is overwritten as
+        // the source index
+        // was already set to be a read-only index for all associated indices
+        addAlias(indexAlias, targetIndexName, true);
+      }
+      deleteIndexIfExists(sourceIndex);
+      deleteTemplateIfExists(sourceTemplateName);
+    }
+  }
+
+  private void migrateSingleIndex(
+      final IndexMappingCreator<BUILDER> index,
+      final String mappingScript,
+      final Map<String, Object> parameters,
+      final Set<String> additionalReadAliases) {
+    final String indexAlias = getIndexAlias(index);
+    final String sourceIndexName = getSourceIndexOrTemplateName(index, indexAlias);
+    final String targetIndexName = getIndexNameService().getOptimizeIndexNameWithVersion(index);
+    if (!indexExists(sourceIndexName)) {
+      // if the expected source index is not available anymore there are only two possibilities:
+      // 1. it never existed (unexpected edge-case)
+      // 2. a previous upgrade run completed this step already
+      // in both cases we can try to create/update the target index in a fail-safe way
+      LOG.info(
+          "Source index {} was not found, will just create/update the new index {}.",
+          sourceIndexName,
+          targetIndexName);
+      createOrUpdateIndex(index);
+    } else {
+      // create new index and reindex data to it
+      final ALIASES existingAliases = getAllAliasesForIndex(sourceIndexName);
+      setAllAliasesToReadOnly(sourceIndexName, existingAliases);
+      createOrUpdateIndex(index);
+      reindex(sourceIndexName, targetIndexName, mappingScript, parameters);
+      applyAliasesToIndex(targetIndexName, existingAliases);
+      applyAdditionalReadOnlyAliasesToIndex(additionalReadAliases, targetIndexName);
+      // in case of retries it might happen that the default write index flag is overwritten as the
+      // source index
+      // was already set to be a read-only index for all associated indices
+      addAlias(indexAlias, targetIndexName, true);
+      deleteIndexIfExists(sourceIndexName);
+    }
+  }
+
+  protected abstract ALIASES getAllAliasesForIndex(final String indexName);
+
+  protected abstract void setAllAliasesToReadOnly(final String indexName, final ALIASES aliases);
+
+  protected abstract void applyAliasesToIndex(final String indexName, final ALIASES aliases);
 }

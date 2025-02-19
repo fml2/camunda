@@ -44,22 +44,32 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@Slf4j
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class DecisionViewRawDataInterpreterES extends AbstractDecisionViewRawDataInterpreter
     implements DecisionViewInterpreterES {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(DecisionViewRawDataInterpreterES.class);
   private final ConfigurationService configurationService;
   private final ObjectMapper objectMapper;
   private final OptimizeElasticsearchClient esClient;
-  @Getter private final DecisionVariableReader decisionVariableReader;
+  private final DecisionVariableReader decisionVariableReader;
+
+  public DecisionViewRawDataInterpreterES(
+      final ConfigurationService configurationService,
+      final ObjectMapper objectMapper,
+      final OptimizeElasticsearchClient esClient,
+      final DecisionVariableReader decisionVariableReader) {
+    this.configurationService = configurationService;
+    this.objectMapper = objectMapper;
+    this.esClient = esClient;
+    this.decisionVariableReader = decisionVariableReader;
+  }
 
   @Override
   public void adjustSearchRequest(
@@ -229,5 +239,9 @@ public class DecisionViewRawDataInterpreterES extends AbstractDecisionViewRawDat
                                                     t.field(variableIdPath)
                                                         .value(inputVariableId))))
                         .order(getSortOrder(sortOrder))));
+  }
+
+  public DecisionVariableReader getDecisionVariableReader() {
+    return this.decisionVariableReader;
   }
 }

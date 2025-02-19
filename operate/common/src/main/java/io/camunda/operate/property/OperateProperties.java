@@ -31,7 +31,6 @@ public class OperateProperties {
   private static final String UNKNOWN_VERSION = "unknown-version";
 
   private boolean importerEnabled = true;
-  private boolean archiverEnabled = true;
   private boolean webappEnabled = true;
 
   private boolean rfc3339ApiDateFormat = false;
@@ -61,7 +60,7 @@ public class OperateProperties {
   private String version = UNKNOWN_VERSION;
 
   @NestedConfigurationProperty
-  private final OperateElasticsearchProperties elasticsearch = new OperateElasticsearchProperties();
+  private OperateElasticsearchProperties elasticsearch = new OperateElasticsearchProperties();
 
   @NestedConfigurationProperty
   private OperateOpensearchProperties opensearch = new OperateOpensearchProperties();
@@ -78,8 +77,6 @@ public class OperateProperties {
   private OperationExecutorProperties operationExecutor = new OperationExecutorProperties();
 
   @NestedConfigurationProperty private ImportProperties importer = new ImportProperties();
-
-  @NestedConfigurationProperty private ArchiverProperties archiver = new ArchiverProperties();
 
   @NestedConfigurationProperty
   private ClusterNodeProperties clusterNode = new ClusterNodeProperties();
@@ -101,23 +98,12 @@ public class OperateProperties {
   @NestedConfigurationProperty
   private WebSecurityProperties webSecurity = new WebSecurityProperties();
 
-  @NestedConfigurationProperty
-  private MultiTenancyProperties multiTenancy = new MultiTenancyProperties();
-
   public boolean isImporterEnabled() {
     return importerEnabled;
   }
 
   public void setImporterEnabled(final boolean importerEnabled) {
     this.importerEnabled = importerEnabled;
-  }
-
-  public boolean isArchiverEnabled() {
-    return archiverEnabled;
-  }
-
-  public void setArchiverEnabled(final boolean archiverEnabled) {
-    this.archiverEnabled = archiverEnabled;
   }
 
   public boolean isWebappEnabled() {
@@ -146,6 +132,10 @@ public class OperateProperties {
 
   public OperateElasticsearchProperties getElasticsearch() {
     return elasticsearch;
+  }
+
+  public void setElasticsearch(final OperateElasticsearchProperties elasticsearch) {
+    this.elasticsearch = elasticsearch;
   }
 
   public OperateOpensearchProperties getOpensearch() {
@@ -226,14 +216,6 @@ public class OperateProperties {
 
   public void setImporter(final ImportProperties importer) {
     this.importer = importer;
-  }
-
-  public ArchiverProperties getArchiver() {
-    return archiver;
-  }
-
-  public void setArchiver(final ArchiverProperties archiver) {
-    this.archiver = archiver;
   }
 
   public ClusterNodeProperties getClusterNode() {
@@ -346,15 +328,6 @@ public class OperateProperties {
 
   public OperateProperties setVersion(final String version) {
     this.version = version;
-    return this;
-  }
-
-  public MultiTenancyProperties getMultiTenancy() {
-    return multiTenancy;
-  }
-
-  public OperateProperties setMultiTenancy(final MultiTenancyProperties multiTenancy) {
-    this.multiTenancy = multiTenancy;
     return this;
   }
 

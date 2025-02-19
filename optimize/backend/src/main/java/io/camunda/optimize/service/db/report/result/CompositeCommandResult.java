@@ -31,10 +31,6 @@ import io.camunda.optimize.dto.optimize.query.sorting.ReportSortingDto;
 import io.camunda.optimize.dto.optimize.query.sorting.SortOrder;
 import io.camunda.optimize.dto.optimize.query.variable.VariableType;
 import io.camunda.optimize.dto.optimize.rest.pagination.PaginationDto;
-import io.camunda.optimize.service.db.es.report.result.HyperMapCommandResult;
-import io.camunda.optimize.service.db.es.report.result.MapCommandResult;
-import io.camunda.optimize.service.db.es.report.result.NumberCommandResult;
-import io.camunda.optimize.service.db.es.report.result.RawDataCommandResult;
 import io.camunda.optimize.service.exceptions.OptimizeRuntimeException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -48,17 +44,10 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 
-@Data
-@RequiredArgsConstructor
 public class CompositeCommandResult {
+
   private final SingleReportDataDto reportDataDto;
   private final ViewProperty viewProperty;
 
@@ -77,6 +66,12 @@ public class CompositeCommandResult {
     this.reportDataDto = reportDataDto;
     this.viewProperty = viewProperty;
     defaultNumberValueSupplier = () -> defaultNumberValue;
+  }
+
+  public CompositeCommandResult(
+      final SingleReportDataDto reportDataDto, final ViewProperty viewProperty) {
+    this.reportDataDto = reportDataDto;
+    this.viewProperty = viewProperty;
   }
 
   public void setGroup(final GroupByResult groupByResult) {
@@ -284,8 +279,14 @@ public class CompositeCommandResult {
 
     final Function<MapResultEntryDto, Comparable> valueToSortByExtractor;
     switch (sortBy) {
-      default:
+      case ReportSortingDto.SORT_BY_VALUE:
+        valueToSortByExtractor = MapResultEntryDto::getValue;
+        break;
+      case ReportSortingDto.SORT_BY_LABEL:
+        valueToSortByExtractor = entry -> entry.getLabel().toLowerCase(Locale.ENGLISH);
+        break;
       case ReportSortingDto.SORT_BY_KEY:
+      default:
         valueToSortByExtractor =
             entry -> {
               if (entry.getKey().equals(MISSING_VARIABLE_KEY)) {
@@ -301,12 +302,6 @@ public class CompositeCommandResult {
                 }
               }
             };
-        break;
-      case ReportSortingDto.SORT_BY_VALUE:
-        valueToSortByExtractor = MapResultEntryDto::getValue;
-        break;
-      case ReportSortingDto.SORT_BY_LABEL:
-        valueToSortByExtractor = entry -> entry.getLabel().toLowerCase(Locale.ENGLISH);
         break;
     }
 
@@ -345,8 +340,11 @@ public class CompositeCommandResult {
               final Function<HyperMapResultEntryDto, Comparable> valueToSortByExtractor;
 
               switch (sortBy) {
-                default:
+                case ReportSortingDto.SORT_BY_LABEL:
+                  valueToSortByExtractor = entry -> entry.getLabel().toLowerCase(Locale.ENGLISH);
+                  break;
                 case ReportSortingDto.SORT_BY_KEY:
+                default:
                   valueToSortByExtractor =
                       entry -> {
                         if (entry.getKey().equals(MISSING_VARIABLE_KEY)) {
@@ -362,9 +360,6 @@ public class CompositeCommandResult {
                           }
                         }
                       };
-                  break;
-                case ReportSortingDto.SORT_BY_LABEL:
-                  valueToSortByExtractor = entry -> entry.getLabel().toLowerCase(Locale.ENGLISH);
                   break;
               }
 
@@ -394,12 +389,109 @@ public class CompositeCommandResult {
         resultClass.getSimpleName(), resultClass.getSimpleName(), resultPartClass.getSimpleName());
   }
 
-  @AllArgsConstructor(access = AccessLevel.PROTECTED)
-  @Data
+  public SingleReportDataDto getReportDataDto() {
+    return reportDataDto;
+  }
+
+  public ViewProperty getViewProperty() {
+    return viewProperty;
+  }
+
+  public ReportSortingDto getGroupBySorting() {
+    return groupBySorting;
+  }
+
+  public void setGroupBySorting(final ReportSortingDto groupBySorting) {
+    this.groupBySorting = groupBySorting;
+  }
+
+  public ReportSortingDto getDistributedBySorting() {
+    return distributedBySorting;
+  }
+
+  public void setDistributedBySorting(final ReportSortingDto distributedBySorting) {
+    this.distributedBySorting = distributedBySorting;
+  }
+
+  public boolean isGroupByKeyOfNumericType() {
+    return isGroupByKeyOfNumericType;
+  }
+
+  public void setGroupByKeyOfNumericType(final boolean isGroupByKeyOfNumericType) {
+    this.isGroupByKeyOfNumericType = isGroupByKeyOfNumericType;
+  }
+
+  public boolean isDistributedByKeyOfNumericType() {
+    return isDistributedByKeyOfNumericType;
+  }
+
+  public void setDistributedByKeyOfNumericType(final boolean isDistributedByKeyOfNumericType) {
+    this.isDistributedByKeyOfNumericType = isDistributedByKeyOfNumericType;
+  }
+
+  public Supplier<Double> getDefaultNumberValueSupplier() {
+    return defaultNumberValueSupplier;
+  }
+
+  public void setDefaultNumberValueSupplier(final Supplier<Double> defaultNumberValueSupplier) {
+    this.defaultNumberValueSupplier = defaultNumberValueSupplier;
+  }
+
+  public List<GroupByResult> getGroups() {
+    return groups;
+  }
+
+  public void setGroups(final List<GroupByResult> groups) {
+    this.groups = groups;
+  }
+
+  protected boolean canEqual(final Object other) {
+    return other instanceof CompositeCommandResult;
+  }
+
+  @Override
+  public int hashCode() {
+    return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+  }
+
+  @Override
+  public boolean equals(final Object o) {
+    return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+  }
+
+  @Override
+  public String toString() {
+    return "CompositeCommandResult(reportDataDto="
+        + getReportDataDto()
+        + ", viewProperty="
+        + getViewProperty()
+        + ", groupBySorting="
+        + getGroupBySorting()
+        + ", distributedBySorting="
+        + getDistributedBySorting()
+        + ", isGroupByKeyOfNumericType="
+        + isGroupByKeyOfNumericType()
+        + ", isDistributedByKeyOfNumericType="
+        + isDistributedByKeyOfNumericType()
+        + ", defaultNumberValueSupplier="
+        + getDefaultNumberValueSupplier()
+        + ", groups="
+        + getGroups()
+        + ")";
+  }
+
   public static class GroupByResult {
+
     private String key;
     private String label;
     private List<DistributedByResult> distributions;
+
+    protected GroupByResult(
+        final String key, final String label, final List<DistributedByResult> distributions) {
+      this.key = key;
+      this.label = label;
+      this.distributions = distributions;
+    }
 
     public static GroupByResult createGroupByNone(final List<DistributedByResult> distributions) {
       return new GroupByResult(GROUP_NONE_KEY, null, distributions);
@@ -423,15 +515,65 @@ public class CompositeCommandResult {
     public String getLabel() {
       return !StringUtils.isEmpty(label) ? label : key;
     }
+
+    public void setLabel(final String label) {
+      this.label = label;
+    }
+
+    public String getKey() {
+      return key;
+    }
+
+    public void setKey(final String key) {
+      this.key = key;
+    }
+
+    public List<DistributedByResult> getDistributions() {
+      return distributions;
+    }
+
+    public void setDistributions(final List<DistributedByResult> distributions) {
+      this.distributions = distributions;
+    }
+
+    protected boolean canEqual(final Object other) {
+      return other instanceof GroupByResult;
+    }
+
+    @Override
+    public int hashCode() {
+      return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+      return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+    }
+
+    @Override
+    public String toString() {
+      return "CompositeCommandResult.GroupByResult(key="
+          + getKey()
+          + ", label="
+          + getLabel()
+          + ", distributions="
+          + getDistributions()
+          + ")";
+    }
   }
 
-  @AllArgsConstructor(access = AccessLevel.PROTECTED)
-  @Data
-  @EqualsAndHashCode
   public static class DistributedByResult {
+
     private String key;
     private String label;
     private ViewResult viewResult;
+
+    protected DistributedByResult(
+        final String key, final String label, final ViewResult viewResult) {
+      this.key = key;
+      this.label = label;
+      this.viewResult = viewResult;
+    }
 
     public static DistributedByResult createDistributedByNoneResult(final ViewResult viewResult) {
       return new DistributedByResult(null, null, viewResult);
@@ -446,6 +588,10 @@ public class CompositeCommandResult {
       return label != null && !label.isEmpty() ? label : key;
     }
 
+    public void setLabel(final String label) {
+      this.label = label;
+    }
+
     public List<Double> getValuesAsDouble() {
       return getViewResult().getViewMeasures().stream()
           .map(ViewMeasure::getValue)
@@ -457,9 +603,49 @@ public class CompositeCommandResult {
           .map(value -> new MapResultEntryDto(key, value, label))
           .collect(Collectors.toList());
     }
+
+    public String getKey() {
+      return key;
+    }
+
+    public void setKey(final String key) {
+      this.key = key;
+    }
+
+    public ViewResult getViewResult() {
+      return viewResult;
+    }
+
+    public void setViewResult(final ViewResult viewResult) {
+      this.viewResult = viewResult;
+    }
+
+    protected boolean canEqual(final Object other) {
+      return other instanceof DistributedByResult;
+    }
+
+    @Override
+    public int hashCode() {
+      return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+      return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+    }
+
+    @Override
+    public String toString() {
+      return "CompositeCommandResult.DistributedByResult(key="
+          + getKey()
+          + ", label="
+          + getLabel()
+          + ", viewResult="
+          + getViewResult()
+          + ")";
+    }
   }
 
-  @Data
   public static class ViewResult {
 
     private List<ViewMeasure> viewMeasures;
@@ -473,6 +659,45 @@ public class CompositeCommandResult {
 
     public static ViewResultBuilder builder() {
       return new ViewResultBuilder();
+    }
+
+    public List<ViewMeasure> getViewMeasures() {
+      return viewMeasures;
+    }
+
+    public void setViewMeasures(final List<ViewMeasure> viewMeasures) {
+      this.viewMeasures = viewMeasures;
+    }
+
+    public List<? extends RawDataInstanceDto> getRawData() {
+      return rawData;
+    }
+
+    public void setRawData(final List<? extends RawDataInstanceDto> rawData) {
+      this.rawData = rawData;
+    }
+
+    protected boolean canEqual(final Object other) {
+      return other instanceof ViewResult;
+    }
+
+    @Override
+    public int hashCode() {
+      return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+      return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+    }
+
+    @Override
+    public String toString() {
+      return "CompositeCommandResult.ViewResult(viewMeasures="
+          + getViewMeasures()
+          + ", rawData="
+          + getRawData()
+          + ")";
     }
 
     public static class ViewResultBuilder {
@@ -541,7 +766,6 @@ public class CompositeCommandResult {
     }
   }
 
-  @Data
   public static class ViewMeasure {
 
     private AggregationDto aggregationType;
@@ -563,6 +787,55 @@ public class CompositeCommandResult {
 
     public static ViewMeasureBuilder builder() {
       return new ViewMeasureBuilder();
+    }
+
+    public AggregationDto getAggregationType() {
+      return aggregationType;
+    }
+
+    public void setAggregationType(final AggregationDto aggregationType) {
+      this.aggregationType = aggregationType;
+    }
+
+    public UserTaskDurationTime getUserTaskDurationTime() {
+      return userTaskDurationTime;
+    }
+
+    public void setUserTaskDurationTime(final UserTaskDurationTime userTaskDurationTime) {
+      this.userTaskDurationTime = userTaskDurationTime;
+    }
+
+    public Double getValue() {
+      return value;
+    }
+
+    public void setValue(final Double value) {
+      this.value = value;
+    }
+
+    protected boolean canEqual(final Object other) {
+      return other instanceof ViewMeasure;
+    }
+
+    @Override
+    public int hashCode() {
+      return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+      return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+    }
+
+    @Override
+    public String toString() {
+      return "CompositeCommandResult.ViewMeasure(aggregationType="
+          + getAggregationType()
+          + ", userTaskDurationTime="
+          + getUserTaskDurationTime()
+          + ", value="
+          + getValue()
+          + ")";
     }
 
     public static class ViewMeasureBuilder {
@@ -606,9 +879,6 @@ public class CompositeCommandResult {
     }
   }
 
-  @Data
-  @AllArgsConstructor
-  @NoArgsConstructor
   public static class ViewMeasureIdentifier {
 
     private AggregationDto aggregationType;
@@ -616,6 +886,53 @@ public class CompositeCommandResult {
 
     public ViewMeasureIdentifier(final AggregationDto aggregationDto) {
       aggregationType = aggregationDto;
+    }
+
+    public ViewMeasureIdentifier(
+        final AggregationDto aggregationType, final UserTaskDurationTime userTaskDurationTime) {
+      this.aggregationType = aggregationType;
+      this.userTaskDurationTime = userTaskDurationTime;
+    }
+
+    public ViewMeasureIdentifier() {}
+
+    public AggregationDto getAggregationType() {
+      return aggregationType;
+    }
+
+    public void setAggregationType(final AggregationDto aggregationType) {
+      this.aggregationType = aggregationType;
+    }
+
+    public UserTaskDurationTime getUserTaskDurationTime() {
+      return userTaskDurationTime;
+    }
+
+    public void setUserTaskDurationTime(final UserTaskDurationTime userTaskDurationTime) {
+      this.userTaskDurationTime = userTaskDurationTime;
+    }
+
+    protected boolean canEqual(final Object other) {
+      return other instanceof ViewMeasureIdentifier;
+    }
+
+    @Override
+    public int hashCode() {
+      return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+      return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+    }
+
+    @Override
+    public String toString() {
+      return "CompositeCommandResult.ViewMeasureIdentifier(aggregationType="
+          + getAggregationType()
+          + ", userTaskDurationTime="
+          + getUserTaskDurationTime()
+          + ")";
     }
   }
 }

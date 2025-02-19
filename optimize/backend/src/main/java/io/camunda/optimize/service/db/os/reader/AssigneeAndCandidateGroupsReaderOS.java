@@ -16,8 +16,8 @@ import static io.camunda.optimize.service.util.DefinitionQueryUtilOS.createDefin
 
 import io.camunda.optimize.service.db.os.OpenSearchCompositeAggregationScroller;
 import io.camunda.optimize.service.db.os.OptimizeOpenSearchClient;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.AggregationDSL;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL;
+import io.camunda.optimize.service.db.os.client.dsl.AggregationDSL;
+import io.camunda.optimize.service.db.os.client.dsl.QueryDSL;
 import io.camunda.optimize.service.db.reader.AssigneeAndCandidateGroupsReader;
 import io.camunda.optimize.service.util.configuration.condition.OpenSearchCondition;
 import java.util.ArrayList;
@@ -27,8 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
 import org.opensearch.client.opensearch._types.aggregations.CompositeAggregation;
 import org.opensearch.client.opensearch._types.aggregations.CompositeAggregationSource;
@@ -36,21 +34,26 @@ import org.opensearch.client.opensearch._types.aggregations.CompositeTermsAggreg
 import org.opensearch.client.opensearch._types.aggregations.NestedAggregation;
 import org.opensearch.client.opensearch._types.aggregations.NestedAggregation.Builder;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
-@Slf4j
 @Conditional(OpenSearchCondition.class)
 public class AssigneeAndCandidateGroupsReaderOS implements AssigneeAndCandidateGroupsReader {
 
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(AssigneeAndCandidateGroupsReaderOS.class);
   private final OptimizeOpenSearchClient osClient;
+
+  public AssigneeAndCandidateGroupsReaderOS(final OptimizeOpenSearchClient osClient) {
+    this.osClient = osClient;
+  }
 
   @Override
   public Set<String> getUserTaskFieldTerms(
       final String userTaskFieldName, final Map<String, Set<String>> definitionKeyToTenantsMap) {
-    log.debug(
+    LOG.debug(
         "Fetching {} for process definition with key and tenants [{}]",
         userTaskFieldName,
         definitionKeyToTenantsMap);
@@ -108,9 +111,9 @@ public class AssigneeAndCandidateGroupsReaderOS implements AssigneeAndCandidateG
     final CompositeAggregation assigneeCompositeAgg =
         new CompositeAggregation.Builder().sources(sources).size(resolvedBatchSize).build();
 
-    NestedAggregation nestedAgg = new Builder().path(FLOW_NODE_INSTANCES).build();
+    final NestedAggregation nestedAgg = new Builder().path(FLOW_NODE_INSTANCES).build();
 
-    Aggregation userTasksAgg =
+    final Aggregation userTasksAgg =
         AggregationDSL.withSubaggregations(
             nestedAgg,
             Collections.singletonMap(COMPOSITE_AGG, assigneeCompositeAgg._toAggregation()));

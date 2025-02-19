@@ -11,7 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 
 import com.jayway.jsonpath.JsonPath;
+import io.camunda.security.configuration.SecurityConfiguration;
 import io.camunda.service.JobServices;
+import io.camunda.service.security.SecurityContextProvider;
 import io.camunda.zeebe.broker.client.api.BrokerClient;
 import io.camunda.zeebe.broker.client.api.dto.BrokerRejection;
 import io.camunda.zeebe.broker.client.api.dto.BrokerRejectionResponse;
@@ -20,7 +22,7 @@ import io.camunda.zeebe.gateway.api.util.StubbedBrokerClient;
 import io.camunda.zeebe.gateway.impl.broker.request.BrokerActivateJobsRequest;
 import io.camunda.zeebe.gateway.impl.job.ActivateJobsHandler;
 import io.camunda.zeebe.gateway.impl.job.LongPollingActivateJobsHandler;
-import io.camunda.zeebe.gateway.protocol.rest.JobActivationResponse;
+import io.camunda.zeebe.gateway.protocol.rest.JobActivationResult;
 import io.camunda.zeebe.gateway.rest.ResponseMapper;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
 import io.camunda.zeebe.gateway.rest.controller.util.ResettableJobActivationRequestResponseObserver;
@@ -49,7 +51,7 @@ public class JobControllerLongPollingTest extends RestControllerTest {
 
   static final String JOBS_BASE_URL = "/v2/jobs";
 
-  @Autowired ActivateJobsHandler<JobActivationResponse> activateJobsHandler;
+  @Autowired ActivateJobsHandler<JobActivationResult> activateJobsHandler;
   @Autowired StubbedBrokerClient stubbedBrokerClient;
   @SpyBean ResettableJobActivationRequestResponseObserver responseObserver;
 
@@ -81,33 +83,33 @@ public class JobControllerLongPollingTest extends RestControllerTest {
         {
           "jobs": [
             {
-              "key": 2251799813685248,
+              "jobKey": "2251799813685248",
               "type": "TEST",
-              "processInstanceKey": 123,
-              "processDefinitionKey": 4532,
+              "processInstanceKey": "123",
+              "processDefinitionKey": "4532",
               "processDefinitionVersion": 23,
-              "elementInstanceKey": 459,
+              "elementInstanceKey": "459",
               "retries": 12,
               "deadline": 123123123,
               "tenantId": "default",
-              "variables": {},
-              "customHeaders": {},
+              "variables": {"bar": "world", "foo": 13},
+              "customHeaders": {"bar": "val", "foo": 12},
               "processDefinitionId": "stubProcess",
               "elementId": "stubActivity",
               "worker": "bar"
             },
             {
-              "key": 2251799813685249,
+              "jobKey": "2251799813685249",
               "type": "TEST",
-              "processInstanceKey": 123,
-              "processDefinitionKey": 4532,
+              "processInstanceKey": "123",
+              "processDefinitionKey": "4532",
               "processDefinitionVersion": 23,
-              "elementInstanceKey": 459,
+              "elementInstanceKey": "459",
               "retries": 12,
               "deadline": 123123123,
               "tenantId": "default",
-              "variables": {},
-              "customHeaders": {},
+              "variables": {"bar": "world", "foo": 13},
+              "customHeaders": {"bar": "val", "foo": 12},
               "processDefinitionId": "stubProcess",
               "elementId": "stubActivity",
               "worker": "bar"
@@ -213,7 +215,8 @@ public class JobControllerLongPollingTest extends RestControllerTest {
             .returnResult()
             .getResponseBody();
 
-    final int basePartition = Protocol.decodePartitionId(JsonPath.read(result, "$.jobs[0].key"));
+    final int basePartition =
+        Protocol.decodePartitionId(Long.parseLong(JsonPath.read(result, "$.jobs[0].jobKey")));
     final int partitionsCount =
         stubbedBrokerClient.getTopologyManager().getTopology().getPartitionsCount();
 
@@ -237,9 +240,9 @@ public class JobControllerLongPollingTest extends RestControllerTest {
           .expectHeader()
           .contentType(MediaType.APPLICATION_JSON)
           .expectBody()
-          .jsonPath("$.jobs[0].key")
+          .jsonPath("$.jobs[0].jobKey")
           .isEqualTo(Protocol.encodePartitionId(expectedPartitionId, 0))
-          .jsonPath("$.jobs[1].key")
+          .jsonPath("$.jobs[1].jobKey")
           .isEqualTo(Protocol.encodePartitionId(expectedPartitionId, 1));
     }
   }
@@ -334,10 +337,10 @@ public class JobControllerLongPollingTest extends RestControllerTest {
     }
 
     @Bean
-    public ActivateJobsHandler<JobActivationResponse> activateJobsHandler(
+    public ActivateJobsHandler<JobActivationResult> activateJobsHandler(
         final BrokerClient brokerClient, final ActorScheduler actorScheduler) {
       final var handler =
-          LongPollingActivateJobsHandler.<JobActivationResponse>newBuilder()
+          LongPollingActivateJobsHandler.<JobActivationResult>newBuilder()
               .setBrokerClient(brokerClient)
               .setMaxMessageSize(DataSize.ofMegabytes(4L).toBytes())
               .setActivationResultMapper(ResponseMapper::toActivateJobsResponse)
@@ -355,10 +358,14 @@ public class JobControllerLongPollingTest extends RestControllerTest {
     }
 
     @Bean
-    public JobServices<JobActivationResponse> jobServices(
+    public JobServices<JobActivationResult> jobServices(
         final BrokerClient brokerClient,
-        final ActivateJobsHandler<JobActivationResponse> activateJobsHandler) {
-      return new JobServices<>(brokerClient, activateJobsHandler, null);
+        final ActivateJobsHandler<JobActivationResult> activateJobsHandler) {
+      return new JobServices<>(
+          brokerClient,
+          new SecurityContextProvider(new SecurityConfiguration(), null),
+          activateJobsHandler,
+          null);
     }
   }
 }

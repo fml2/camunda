@@ -7,20 +7,34 @@
  */
 package io.camunda.search.filter;
 
+import static io.camunda.util.CollectionUtil.addValuesToList;
+import static io.camunda.util.CollectionUtil.collectValuesAsList;
+
 import io.camunda.util.ObjectBuilder;
+import io.camunda.zeebe.protocol.record.value.PermissionType;
+import java.util.List;
 
 public record AuthorizationFilter(
-    String ownerKey, String ownerType, String resourceKey, String resourceType)
+    List<String> ownerIds,
+    String ownerType,
+    List<String> resourceIds,
+    String resourceType,
+    List<PermissionType> permissionTypes)
     implements FilterBase {
   public static final class Builder implements ObjectBuilder<AuthorizationFilter> {
-    private String ownerKey;
+    private List<String> ownerIds;
     private String ownerType;
-    private String resourceKey;
+    private List<String> resourceIds;
     private String resourceType;
+    private List<PermissionType> permissionTypes;
 
-    public Builder ownerKey(final String value) {
-      ownerKey = value;
+    public Builder ownerIds(final List<String> value) {
+      ownerIds = addValuesToList(ownerIds, value);
       return this;
+    }
+
+    public Builder ownerIds(final String... values) {
+      return ownerIds(collectValuesAsList(values));
     }
 
     public Builder ownerType(final String value) {
@@ -28,9 +42,13 @@ public record AuthorizationFilter(
       return this;
     }
 
-    public Builder resourceKey(final String value) {
-      resourceKey = value;
+    public Builder resourceIds(final List<String> value) {
+      resourceIds = value;
       return this;
+    }
+
+    public Builder resourceIds(final String... values) {
+      return resourceIds(collectValuesAsList(values));
     }
 
     public Builder resourceType(final String value) {
@@ -38,9 +56,19 @@ public record AuthorizationFilter(
       return this;
     }
 
+    public Builder permissionTypes(final List<PermissionType> value) {
+      permissionTypes = addValuesToList(permissionTypes, value);
+      return this;
+    }
+
+    public Builder permissionTypes(final PermissionType... values) {
+      return permissionTypes(collectValuesAsList(values));
+    }
+
     @Override
     public AuthorizationFilter build() {
-      return new AuthorizationFilter(ownerKey, ownerType, resourceKey, resourceType);
+      return new AuthorizationFilter(
+          ownerIds, ownerType, resourceIds, resourceType, permissionTypes);
     }
   }
 }

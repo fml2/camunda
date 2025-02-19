@@ -7,7 +7,7 @@
  */
 package io.camunda.optimize.service.db.os.report.interpreter.util;
 
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.json;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.json;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_END_DATE;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_INSTANCES;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_START_DATE;
@@ -21,13 +21,13 @@ import io.camunda.optimize.service.db.os.writer.OpenSearchWriterUtil;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
 import org.opensearch.client.json.JsonData;
 import org.opensearch.client.opensearch._types.Script;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class DurationScriptUtilOS {
+public final class DurationScriptUtilOS {
+
+  private DurationScriptUtilOS() {}
+
   public static Script getDurationScript(
       final long currRequestDateInMs,
       final String durationFieldName,

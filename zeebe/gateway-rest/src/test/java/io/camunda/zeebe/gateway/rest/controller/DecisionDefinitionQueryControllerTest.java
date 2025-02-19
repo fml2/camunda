@@ -18,21 +18,27 @@ import io.camunda.search.filter.DecisionDefinitionFilter;
 import io.camunda.search.query.DecisionDefinitionQuery;
 import io.camunda.search.query.SearchQueryResult;
 import io.camunda.search.query.SearchQueryResult.Builder;
-import io.camunda.search.security.auth.Authentication;
 import io.camunda.search.sort.DecisionDefinitionSort;
+import io.camunda.security.auth.Authentication;
+import io.camunda.security.auth.Authorization;
+import io.camunda.security.configuration.MultiTenancyConfiguration;
 import io.camunda.service.DecisionDefinitionServices;
+import io.camunda.service.exception.ForbiddenException;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.function.BiFunction;
+import java.util.stream.Stream;
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 
-@WebMvcTest(
-    value = DecisionDefinitionQueryController.class,
-    properties = "camunda.rest.query.enabled=true")
+@WebMvcTest(value = DecisionDefinitionController.class)
 public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
 
   static final String EXPECTED_SEARCH_RESPONSE =
@@ -41,17 +47,17 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
               "items": [
                   {
                       "tenantId": "t",
-                      "decisionDefinitionKey": 0,
+                      "decisionDefinitionKey": "0",
                       "decisionDefinitionId": "dId",
                       "name": "name",
                       "version": 1,
                       "decisionRequirementsId": "drId",
-                      "decisionRequirementsKey": 2
+                      "decisionRequirementsKey": "2"
                   }
               ],
               "page": {
                   "totalItems": 1,
-                  "firstSortValues": [],
+                  "firstSortValues": ["f"],
                   "lastSortValues": [
                       "v"
                   ]
@@ -61,15 +67,17 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
   static final SearchQueryResult<DecisionDefinitionEntity> SEARCH_QUERY_RESULT =
       new Builder<DecisionDefinitionEntity>()
           .total(1L)
-          .items(List.of(new DecisionDefinitionEntity("t", 0L, "dId", "name", 1, "drId", 2L)))
-          .sortValues(new Object[] {"v"})
+          .items(List.of(new DecisionDefinitionEntity(0L, "dId", "name", 1, "drId", 2L, "t")))
+          .firstSortValues(new Object[] {"f"})
+          .lastSortValues(new Object[] {"v"})
           .build();
 
   static final String DECISION_DEFINITIONS_SEARCH_URL = "/v2/decision-definitions/search";
-
+  static final String DECISION_DEFINITIONS_GET_URL = "/v2/decision-definitions/%d";
   static final String DECISION_DEFINITIONS_GET_XML_URL = "/v2/decision-definitions/%d/xml";
 
   @MockBean DecisionDefinitionServices decisionDefinitionServices;
+  @MockBean MultiTenancyConfiguration multiTenancyCfg;
 
   @BeforeEach
   void setupServices() {
@@ -131,11 +139,11 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
             {
               "filter":{
                 "tenantId": "t",
-                "decisionDefinitionKey": 0,
+                "decisionDefinitionKey": "0",
                 "name": "name",
                 "version": 1,
                 "decisionRequirementsId": "drId",
-                "decisionRequirementsKey": 2,
+                "decisionRequirementsKey": "2",
                 "decisionDefinitionId": "dId",
                 "decisionRequirementsName": "drName",
                 "decisionRequirementsVersion": 3
@@ -184,15 +192,15 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
                 "sort": [
                     {
                         "field": "decisionDefinitionKey",
-                        "order": "asc"
+                        "order": "ASC"
                     },
                     {
                         "field": "name",
-                        "order": "desc"
+                        "order": "DESC"
                     },
                     {
                         "field": "version",
-                        "order": "asc"
+                        "order": "ASC"
                     },
                     {
                          "field": "decisionDefinitionId"
@@ -255,7 +263,7 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
                 "sort": [
                     {
                         "field": "unknownField",
-                        "order": "asc"
+                        "order": "ASC"
                     }
                 ]
             }""";
@@ -263,9 +271,9 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
         """
             {
               "type": "about:blank",
-              "title": "INVALID_ARGUMENT",
+              "title": "Bad Request",
               "status": 400,
-              "detail": "Unknown sortBy: unknownField.",
+              "detail": "Unexpected value 'unknownField' for enum field 'field'. Use any of the following values: [decisionDefinitionKey, decisionDefinitionId, name, version, decisionRequirementsId, decisionRequirementsKey, tenantId]",
               "instance": "%s"
             }"""
             .formatted(DECISION_DEFINITIONS_SEARCH_URL);
@@ -401,19 +409,19 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
     // given
     final Long decisionDefinitionKey = 1L;
     final DecisionDefinitionEntity decisionDefinitionEntity =
-        new DecisionDefinitionEntity("t", 0L, "dId", "name", 1, "drId", 2L);
+        new DecisionDefinitionEntity(0L, "dId", "name", 1, "drId", 2L, "t");
     when(decisionDefinitionServices.getByKey(decisionDefinitionKey))
         .thenReturn(decisionDefinitionEntity);
     final var expectedResponse =
         """
             {
               "tenantId": "t",
-              "decisionDefinitionKey": 0,
+              "decisionDefinitionKey": "0",
               "decisionDefinitionId": "dId",
               "name": "name",
               "version": 1,
               "decisionRequirementsId": "drId",
-              "decisionRequirementsKey": 2
+              "decisionRequirementsKey": "2"
             }""";
     // when/then
     webClient
@@ -484,5 +492,46 @@ public class DecisionDefinitionQueryControllerTest extends RestControllerTest {
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)
         .expectBody()
         .json(expectedResponse);
+  }
+
+  @ParameterizedTest
+  @MethodSource("getDecisionDecisionTestCasesParameters")
+  public void shouldReturn403ForForbiddenDecisionDefinition(
+      final Pair<String, BiFunction<DecisionDefinitionServices, Long, ?>> testParameters) {
+    // given
+    final var url = testParameters.getLeft();
+    final var service = testParameters.getRight();
+    final long decisionDefinitionKey = 1L;
+    when(service.apply(decisionDefinitionServices, decisionDefinitionKey))
+        .thenThrow(new ForbiddenException(Authorization.of(a -> a.decisionDefinition().read())));
+    // when / then
+    webClient
+        .get()
+        .uri(url.formatted(decisionDefinitionKey))
+        .exchange()
+        .expectStatus()
+        .isForbidden()
+        .expectBody()
+        .json(
+            """
+                    {
+                      "type": "about:blank",
+                      "status": 403,
+                      "title": "io.camunda.service.exception.ForbiddenException",
+                      "detail": "Unauthorized to perform operation 'READ' on resource 'DECISION_DEFINITION'"
+                    }
+                """);
+
+    // Verify that the service was called with the invalid key
+    service.apply(verify(decisionDefinitionServices), decisionDefinitionKey);
+  }
+
+  private static Stream<Pair<String, BiFunction<DecisionDefinitionServices, Long, ?>>>
+      getDecisionDecisionTestCasesParameters() {
+    return Stream.of(
+        Pair.of(DECISION_DEFINITIONS_GET_URL, DecisionDefinitionServices::getByKey),
+        Pair.of(
+            DECISION_DEFINITIONS_GET_XML_URL,
+            DecisionDefinitionServices::getDecisionDefinitionXml));
   }
 }

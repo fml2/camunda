@@ -11,9 +11,23 @@ import {test} from '../test-fixtures';
 import {
   mockIncidentsByError,
   mockIncidentsByProcess,
-  mockStatistics,
   mockResponses,
+  mockStatistics,
 } from '../mocks/dashboard.mocks';
+import {URL_API_PATTERN} from '../constants';
+import {clientConfigMock} from '../mocks/clientConfig';
+
+test.beforeEach(async ({context}) => {
+  await context.route('**/client-config.js', (route) =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'text/javascript;charset=UTF-8',
+      },
+      body: clientConfigMock,
+    }),
+  );
+});
 
 test.describe('dashboard page', () => {
   for (const theme of ['light', 'dark']) {
@@ -21,7 +35,7 @@ test.describe('dashboard page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           statistics: {
             running: 0,
@@ -41,7 +55,7 @@ test.describe('dashboard page', () => {
     test(`error page - ${theme}`, async ({page, commonPage, dashboardPage}) => {
       await commonPage.changeTheme(theme);
 
-      await page.route(/^.*\/api.*$/i, mockResponses({}));
+      await page.route(URL_API_PATTERN, mockResponses({}));
 
       await dashboardPage.navigateToDashboard({waitUntil: 'networkidle'});
 
@@ -56,7 +70,7 @@ test.describe('dashboard page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           statistics: mockStatistics,
           incidentsByError: mockIncidentsByError,
@@ -77,7 +91,7 @@ test.describe('dashboard page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           statistics: mockStatistics,
           incidentsByError: mockIncidentsByError,

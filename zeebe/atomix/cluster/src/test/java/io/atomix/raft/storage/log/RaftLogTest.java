@@ -34,9 +34,12 @@ import io.atomix.raft.storage.log.entry.ConfigurationEntry;
 import io.atomix.raft.storage.log.entry.InitialEntry;
 import io.atomix.raft.storage.log.entry.RaftLogEntry;
 import io.atomix.raft.storage.log.entry.SerializedApplicationEntry;
+import io.camunda.zeebe.journal.CheckedJournalException;
 import io.camunda.zeebe.journal.Journal;
 import io.camunda.zeebe.journal.JournalMetaStore;
 import io.camunda.zeebe.journal.JournalMetaStore.InMemory;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -44,6 +47,7 @@ import java.time.Instant;
 import java.util.Set;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -51,6 +55,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class RaftLogTest {
   private static final long DEFAULT_APPLICATION_ENTRY_LENGTH = 2L;
+  @AutoClose private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
   private final InitialEntry initialEntry = new InitialEntry();
   private final ConfigurationEntry configurationEntry =
@@ -69,7 +74,7 @@ class RaftLogTest {
   void setup(@TempDir final File directory) {
     metaStore = new InMemory();
     raftlog =
-        RaftLog.builder()
+        RaftLog.builder(meterRegistry)
             .withDirectory(directory)
             .withName("test")
             .withMetaStore(metaStore)
@@ -152,7 +157,7 @@ class RaftLogTest {
     final RaftLogEntry entry = new RaftLogEntry(1, firstApplicationEntry);
     final var persistedRaftRecord = raftlog.append(entry).getReplicatableJournalRecord();
     final var raftlogFollower =
-        RaftLog.builder()
+        RaftLog.builder(meterRegistry)
             .withDirectory(directory)
             .withName("test-follower")
             .withMetaStore(new InMemory())
@@ -172,7 +177,7 @@ class RaftLogTest {
   }
 
   @Test
-  void shouldDeleteAfter() {
+  void shouldDeleteAfter() throws CheckedJournalException {
     // given
     raftlog.append(new RaftLogEntry(1, firstApplicationEntry));
     final var secondEntry =
@@ -249,7 +254,7 @@ class RaftLogTest {
   @Nested
   final class FlushTest {
     @Test
-    void shouldUseFlusher() {
+    void shouldUseFlusher() throws CheckedJournalException {
       // given
       final var journal = mock(Journal.class);
       final var flusher = mock(RaftLogFlusher.class);
@@ -263,7 +268,7 @@ class RaftLogTest {
     }
 
     @Test
-    void shouldForceFlush() {
+    void shouldForceFlush() throws CheckedJournalException {
       final var journal = mock(Journal.class);
       final var flusher = mock(RaftLogFlusher.class);
       final var log = new RaftLog(journal, flusher);
@@ -277,7 +282,7 @@ class RaftLogTest {
     }
 
     @Test
-    void shouldFlushDirectly() {
+    void shouldFlushDirectly() throws CheckedJournalException {
       // given
       final var journal = mock(Journal.class);
       final var log = new RaftLog(journal, new DirectFlusher());
@@ -291,7 +296,7 @@ class RaftLogTest {
     }
 
     @Test
-    void shouldDisableFlush() {
+    void shouldDisableFlush() throws CheckedJournalException {
       // given
       final var journal = mock(Journal.class);
       final var flusher = spy(new NoopFlusher());

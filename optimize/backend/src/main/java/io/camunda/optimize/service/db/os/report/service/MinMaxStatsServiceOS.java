@@ -8,7 +8,7 @@
 package io.camunda.optimize.service.db.os.report.service;
 
 import static io.camunda.optimize.service.db.DatabaseConstants.OPTIMIZE_DATE_FORMAT;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.sourceExcluded;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.sourceExcluded;
 import static io.camunda.optimize.service.db.os.report.interpreter.util.FilterLimitedAggregationUtilOS.unwrapFilterLimitedAggregations;
 import static io.camunda.optimize.service.db.os.report.interpreter.util.FilterLimitedAggregationUtilOS.wrapWithFilterLimitedParentAggregation;
 
@@ -23,8 +23,6 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.opensearch.client.opensearch._types.Script;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
@@ -34,15 +32,20 @@ import org.opensearch.client.opensearch._types.aggregations.StatsAggregation;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class MinMaxStatsServiceOS extends AbstractMinMaxStatsService {
+
+  private static final Logger LOG = org.slf4j.LoggerFactory.getLogger(MinMaxStatsServiceOS.class);
   private final OptimizeOpenSearchClient osClient;
+
+  public MinMaxStatsServiceOS(final OptimizeOpenSearchClient osClient) {
+    this.osClient = osClient;
+  }
 
   public MinMaxStatDto getMinMaxDateRange(
       final ExecutionContext<? extends SingleReportDataDto, ?> context,
@@ -175,14 +178,14 @@ public class MinMaxStatsServiceOS extends AbstractMinMaxStatsService {
     final SearchResponse<?> response;
     try {
       response = osClient.searchUnsafe(searchRequest, Object.class);
-    } catch (IOException e) {
+    } catch (final IOException e) {
       final String reason =
           String.format(
               "Could not retrieve stats for script %s on indices %s",
               script.toString(), Arrays.toString(indexNames));
-      log.error(reason, e);
+      LOG.error(reason, e);
       throw new OptimizeRuntimeException(reason, e);
-    } catch (RuntimeException e) {
+    } catch (final RuntimeException e) {
       return returnEmptyResultIfInstanceIndexNotFound(e, indexNames);
     }
 
@@ -277,7 +280,7 @@ public class MinMaxStatsServiceOS extends AbstractMinMaxStatsService {
                   .build());
     }
 
-    SearchRequest searchRequest =
+    final SearchRequest searchRequest =
         new SearchRequest.Builder()
             .index(osClient.applyIndexPrefixes(indexNames))
             .query(query)
@@ -288,17 +291,17 @@ public class MinMaxStatsServiceOS extends AbstractMinMaxStatsService {
                     statsAggField2.getKey(), statsAggField2.getValue()))
             .size(0)
             .build();
-    SearchResponse<?> response;
+    final SearchResponse<?> response;
     try {
       response = osClient.searchUnsafe(searchRequest, Object.class);
-    } catch (IOException e) {
-      String reason =
+    } catch (final IOException e) {
+      final String reason =
           String.format(
               "Could not retrieve stats for firstField %s and secondField %s on index %s",
               firstField, secondField, Arrays.toString(indexNames));
-      log.error(reason, e);
+      LOG.error(reason, e);
       throw new OptimizeRuntimeException(reason, e);
-    } catch (RuntimeException e) {
+    } catch (final RuntimeException e) {
       return returnEmptyResultIfInstanceIndexNotFound(e, indexNames);
     }
     return mapCrossFieldStatAggregationsToStatDto(response);

@@ -20,8 +20,8 @@ import io.camunda.search.filter.IncidentFilter;
 import io.camunda.search.query.IncidentQuery;
 import io.camunda.search.query.SearchQueryResult;
 import io.camunda.search.query.SearchQueryResult.Builder;
-import io.camunda.search.security.auth.Authentication;
 import io.camunda.search.sort.IncidentSort;
+import io.camunda.security.auth.Authentication;
 import io.camunda.service.IncidentServices;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
 import java.time.OffsetDateTime;
@@ -34,7 +34,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 
-@WebMvcTest(value = IncidentQueryController.class, properties = "camunda.rest.query.enabled=true")
+@WebMvcTest(value = IncidentController.class)
 public class IncidentQueryControllerTest extends RestControllerTest {
 
   static final String EXPECTED_SEARCH_RESPONSE =
@@ -42,24 +42,23 @@ public class IncidentQueryControllerTest extends RestControllerTest {
           {
               "items": [
                   {
-                      "key": 5,
-                      "processDefinitionKey": 23,
+                      "incidentKey": "5",
+                      "processDefinitionKey": "23",
                       "processDefinitionId": "complexProcess",
-                      "processInstanceKey": 42,
+                      "processInstanceKey": "42",
                       "errorType": "JOB_NO_RETRIES",
                       "errorMessage": "No retries left.",
                       "flowNodeId": "flowNodeId",
-                      "flowNodeInstanceKey": 17,
-                      "creationTime": "2024-05-23T23:05:00.000+0000",
+                      "flowNodeInstanceKey": "17",
+                      "creationTime": "2024-05-23T23:05:00.000Z",
                       "state": "ACTIVE",
-                      "jobKey": 101,
-                      "treePath":"PI_42/FN_flowNodeId/FNI_17",
+                      "jobKey": "101",
                       "tenantId": "tenantId"
                   }
               ],
               "page": {
                   "totalItems": 1,
-                  "firstSortValues": [],
+                  "firstSortValues": ["f"],
                   "lastSortValues": [
                       "v"
                   ]
@@ -80,29 +79,28 @@ public class IncidentQueryControllerTest extends RestControllerTest {
                       "No retries left.",
                       "flowNodeId",
                       17L,
-                      "2024-05-23T23:05:00.000+0000",
+                      OffsetDateTime.parse("2024-05-23T23:05:00.000Z"),
                       IncidentState.ACTIVE,
                       101L,
-                      "PI_42/FN_flowNodeId/FNI_17",
                       "tenantId")))
-          .sortValues(new Object[] {"v"})
+          .firstSortValues(new Object[] {"f"})
+          .lastSortValues(new Object[] {"v"})
           .build();
 
   static final String EXPECTED_GET_RESPONSE =
       """
             {
-                          "key": 5,
-                          "processDefinitionKey": 23,
+                          "incidentKey": "5",
+                          "processDefinitionKey": "23",
                           "processDefinitionId": "complexProcess",
-                          "processInstanceKey": 42,
+                          "processInstanceKey": "42",
                           "errorType": "JOB_NO_RETRIES",
                           "errorMessage": "No retries left.",
                           "flowNodeId": "flowNodeId",
-                          "flowNodeInstanceKey": 17,
-                          "creationTime": "2024-05-23T23:05:00.000+0000",
+                          "flowNodeInstanceKey": "17",
+                          "creationTime": "2024-05-23T23:05:00.000Z",
                           "state": "ACTIVE",
-                          "jobKey": 101,
-                          "treePath":"PI_42/FN_flowNodeId/FNI_17",
+                          "jobKey": "101",
                           "tenantId": "tenantId"
                       }
           """;
@@ -117,10 +115,9 @@ public class IncidentQueryControllerTest extends RestControllerTest {
           "No retries left.",
           "flowNodeId",
           17L,
-          "2024-05-23T23:05:00.000+0000",
+          OffsetDateTime.parse("2024-05-23T23:05:00.000Z"),
           IncidentState.ACTIVE,
           101L,
-          "PI_42/FN_flowNodeId/FNI_17",
           "tenantId");
 
   static final String INCIDENT_URL = "/v2/incidents/";
@@ -183,7 +180,7 @@ public class IncidentQueryControllerTest extends RestControllerTest {
         """
             {
               "filter":{
-                "key": 5,
+                "incidentKey": 5,
                 "processDefinitionKey": 23,
                 "processDefinitionId": "complexProcess",
                 "processInstanceKey": 42,
@@ -191,10 +188,9 @@ public class IncidentQueryControllerTest extends RestControllerTest {
                 "errorMessage": "No retries left.",
                 "flowNodeId": "flowNodeId",
                 "flowNodeInstanceKey": 17,
-                "creationTime": "2024-05-23T23:05:00.000+00:00",
+                "creationTime": "2024-05-23T23:05:00.000Z",
                 "state": "ACTIVE",
                 "jobKey": 101,
-                "treePath":"PI_42/FN_flowNodeId/FNI_17",
                 "tenantId": "tenantId"
               }
             }
@@ -222,9 +218,9 @@ public class IncidentQueryControllerTest extends RestControllerTest {
             new IncidentQuery.Builder()
                 .filter(
                     new IncidentFilter.Builder()
-                        .keys(5L)
+                        .incidentKeys(5L)
                         .processDefinitionKeys(23L)
-                        .bpmnProcessIds("complexProcess")
+                        .processDefinitionIds("complexProcess")
                         .processInstanceKeys(42L)
                         .errorTypes(ErrorType.JOB_NO_RETRIES)
                         .errorMessages("No retries left.")
@@ -237,7 +233,6 @@ public class IncidentQueryControllerTest extends RestControllerTest {
                                 .build())
                         .states(IncidentState.ACTIVE)
                         .jobKeys(101L)
-                        .treePaths("PI_42/FN_flowNodeId/FNI_17")
                         .tenantIds("tenantId")
                         .build())
                 .build());
@@ -251,8 +246,8 @@ public class IncidentQueryControllerTest extends RestControllerTest {
             {
                 "sort": [
                     {
-                        "field": "key",
-                        "order": "asc"
+                        "field": "incidentKey",
+                        "order": "ASC"
                     }
                 ]
             }
@@ -275,7 +270,7 @@ public class IncidentQueryControllerTest extends RestControllerTest {
     verify(incidentServices)
         .search(
             new IncidentQuery.Builder()
-                .sort(new IncidentSort.Builder().key().asc().build())
+                .sort(new IncidentSort.Builder().incidentKey().asc().build())
                 .build());
   }
 
@@ -290,7 +285,7 @@ public class IncidentQueryControllerTest extends RestControllerTest {
         .expectStatus()
         .isOk()
         .expectHeader()
-        .contentType(MediaType.APPLICATION_JSON_UTF8_VALUE)
+        .contentType(MediaType.APPLICATION_JSON)
         .expectBody()
         .json(EXPECTED_GET_RESPONSE);
 

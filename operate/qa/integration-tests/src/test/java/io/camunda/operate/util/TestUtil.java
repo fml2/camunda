@@ -13,13 +13,10 @@ import static io.camunda.operate.util.OperateAbstractIT.DEFAULT_USER;
 import static io.camunda.webapps.schema.entities.AbstractExporterEntity.DEFAULT_TENANT_ID;
 import static io.camunda.webapps.schema.entities.operate.ErrorType.JOB_NO_RETRIES;
 
-import io.camunda.operate.entities.BatchOperationEntity;
-import io.camunda.operate.entities.OperationEntity;
-import io.camunda.operate.entities.OperationState;
-import io.camunda.operate.entities.OperationType;
 import io.camunda.operate.store.opensearch.client.sync.OpenSearchIndexOperations;
 import io.camunda.operate.store.opensearch.client.sync.OpenSearchTemplateOperations;
 import io.camunda.operate.store.opensearch.client.sync.RichOpenSearchClient;
+import io.camunda.webapps.operate.TreePath;
 import io.camunda.webapps.schema.entities.operate.EventEntity;
 import io.camunda.webapps.schema.entities.operate.FlowNodeState;
 import io.camunda.webapps.schema.entities.operate.FlowNodeType;
@@ -36,6 +33,10 @@ import io.camunda.webapps.schema.entities.operate.listview.FlowNodeInstanceForLi
 import io.camunda.webapps.schema.entities.operate.listview.ProcessInstanceForListViewEntity;
 import io.camunda.webapps.schema.entities.operate.listview.ProcessInstanceState;
 import io.camunda.webapps.schema.entities.operate.listview.VariableForListViewEntity;
+import io.camunda.webapps.schema.entities.operation.BatchOperationEntity;
+import io.camunda.webapps.schema.entities.operation.OperationEntity;
+import io.camunda.webapps.schema.entities.operation.OperationState;
+import io.camunda.webapps.schema.entities.operation.OperationType;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -548,14 +549,15 @@ public abstract class TestUtil {
       final OperationState state,
       final String username,
       final boolean lockExpired) {
-    final OperationEntity oe = new OperationEntity();
-    oe.generateId();
-    oe.setProcessInstanceKey(processInstanceKey);
-    oe.setScopeKey(processInstanceKey);
-    oe.setProcessDefinitionKey(processDefinitionKey);
-    oe.setBpmnProcessId(bpmnProcessId);
-    oe.setIncidentKey(incidentKey);
-    oe.setVariableName(varName);
+    final OperationEntity oe =
+        new OperationEntity()
+            .withGeneratedId()
+            .setProcessInstanceKey(processInstanceKey)
+            .setScopeKey(processInstanceKey)
+            .setProcessDefinitionKey(processDefinitionKey)
+            .setBpmnProcessId(bpmnProcessId)
+            .setIncidentKey(incidentKey)
+            .setVariableName(varName);
     if (varName != null) {
       oe.setType(OperationType.UPDATE_VARIABLE);
       oe.setVariableValue(varName);
@@ -593,7 +595,7 @@ public abstract class TestUtil {
   public static BatchOperationEntity createBatchOperationEntity(
       final OffsetDateTime startDate, final OffsetDateTime endDate, final String username) {
     return new BatchOperationEntity()
-        .setId(UUID.randomUUID().toString())
+        .withGeneratedId()
         .setStartDate(startDate)
         .setEndDate(endDate)
         .setUsername(username)

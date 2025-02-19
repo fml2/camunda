@@ -7,7 +7,6 @@
  */
 
 export {Tabs} from './Tabs';
-export {Icon} from './Icon';
 export {ActionItem} from './ActionItem';
 export {Modal} from './Modal';
 export {Select} from './Select';
@@ -35,14 +34,15 @@ export {ShareEntity} from './ShareEntity';
 export {ErrorPage} from './ErrorPage';
 export {ErrorBoundary} from './ErrorBoundary';
 export {TargetSelection} from './TargetSelection';
-// @ts-ignore
+// @ts-expect-error no types yet
 export {DefinitionSelection} from './DefinitionSelection';
-// @ts-ignore
+// @ts-expect-error no types yet
 export {ReportRenderer} from './ReportRenderer';
 export {Loading} from './Loading';
 export {EntityList} from './EntityList';
 export {EmptyState} from './EmptyState';
+export {Breadcrumbs} from './Breadcrumbs';
 
-export type {User} from './UserTypeahead';
+export type {User, Identity} from './UserTypeahead';
 export type {Canvas, ModdleElement, RegistryElement} from './BPMNDiagram';
 export type {TableBody, TableHead} from './Table';

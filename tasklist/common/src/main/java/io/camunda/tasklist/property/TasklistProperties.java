@@ -30,7 +30,6 @@ public class TasklistProperties {
   private static final String UNKNOWN_VERSION = "unknown-version";
 
   private boolean importerEnabled = true;
-  private boolean archiverEnabled = true;
   private boolean webappEnabled = true;
 
   private boolean persistentSessionsEnabled = false;
@@ -76,8 +75,6 @@ public class TasklistProperties {
 
   @NestedConfigurationProperty private ImportProperties importer = new ImportProperties();
 
-  @NestedConfigurationProperty private ArchiverProperties archiver = new ArchiverProperties();
-
   @NestedConfigurationProperty private ClientProperties client = new ClientProperties();
 
   @NestedConfigurationProperty private CloudProperties cloud = new CloudProperties();
@@ -95,9 +92,6 @@ public class TasklistProperties {
   @NestedConfigurationProperty private BackupProperties backup = new BackupProperties();
 
   @NestedConfigurationProperty
-  private MultiTenancyProperties multiTenancy = new MultiTenancyProperties();
-
-  @NestedConfigurationProperty
   private TasklistDocumentationProperties documentation = new TasklistDocumentationProperties();
 
   public boolean isImporterEnabled() {
@@ -106,14 +100,6 @@ public class TasklistProperties {
 
   public void setImporterEnabled(final boolean importerEnabled) {
     this.importerEnabled = importerEnabled;
-  }
-
-  public boolean isArchiverEnabled() {
-    return archiverEnabled;
-  }
-
-  public void setArchiverEnabled(final boolean archiverEnabled) {
-    this.archiverEnabled = archiverEnabled;
   }
 
   public boolean isWebappEnabled() {
@@ -202,14 +188,6 @@ public class TasklistProperties {
 
   public void setImporter(final ImportProperties importer) {
     this.importer = importer;
-  }
-
-  public ArchiverProperties getArchiver() {
-    return archiver;
-  }
-
-  public void setArchiver(final ArchiverProperties archiver) {
-    this.archiver = archiver;
   }
 
   public ClusterNodeProperties getClusterNode() {
@@ -400,15 +378,6 @@ public class TasklistProperties {
 
   public TasklistProperties setZeebeOpenSearch(final ZeebeOpenSearchProperties zeebeOpenSearch) {
     this.zeebeOpenSearch = zeebeOpenSearch;
-    return this;
-  }
-
-  public MultiTenancyProperties getMultiTenancy() {
-    return multiTenancy;
-  }
-
-  public TasklistProperties setMultiTenancy(final MultiTenancyProperties multiTenancy) {
-    this.multiTenancy = multiTenancy;
     return this;
   }
 

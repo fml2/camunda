@@ -7,12 +7,11 @@
  */
 
 import {useMemo, useRef, useState} from 'react';
-import {Form, Variable, CurrentUser, Task} from 'modules/types';
+import type {Form, Variable, CurrentUser, Task} from 'modules/types';
 import {useRemoveFormReference} from 'modules/queries/useTask';
 import {getSchemaVariables} from '@bpmn-io/form-js-viewer';
 import {DetailsFooter} from 'modules/components/DetailsFooter';
 import {type InlineLoadingProps, Layer} from '@carbon/react';
-import {usePermissions} from 'modules/hooks/usePermissions';
 import {notificationsStore} from 'modules/stores/notifications';
 import {FormManager} from 'modules/formManager';
 import {
@@ -56,7 +55,8 @@ type Props = {
   id: Form['id'];
   processDefinitionKey: Form['processDefinitionKey'];
   task: Task;
-  onSubmit: (variables: Variable[]) => Promise<void>;
+  onSubmit: React.ComponentProps<typeof FormJSRenderer>['handleSubmit'];
+  onFileUpload: React.ComponentProps<typeof FormJSRenderer>['handleFileUpload'];
   onSubmitSuccess: () => void;
   onSubmitFailure: (error: Error) => void;
   user: CurrentUser;
@@ -68,6 +68,7 @@ const FormJS: React.FC<Props> = ({
   task,
   onSubmit,
   onSubmitSuccess,
+  onFileUpload,
   onSubmitFailure,
   user,
 }) => {
@@ -87,7 +88,6 @@ const FormJS: React.FC<Props> = ({
       refetchOnWindowFocus: false,
     },
   );
-  const {hasPermission} = usePermissions(['write']);
   const {schema} = data;
   const extractedVariables = extractVariablesFromFormSchema(schema);
   const {data: variablesData, status} = useVariables(
@@ -108,10 +108,7 @@ const FormJS: React.FC<Props> = ({
   const hasFetchedVariables =
     extractedVariables.length === 0 || status === 'success';
   const canCompleteTask =
-    user.userId === assignee &&
-    taskState === 'CREATED' &&
-    hasPermission &&
-    hasFetchedVariables;
+    user.userId === assignee && taskState === 'CREATED' && hasFetchedVariables;
   const {removeFormReference} = useRemoveFormReference(task);
 
   return (
@@ -145,6 +142,7 @@ const FormJS: React.FC<Props> = ({
                     formManagerRef.current = formManager;
                   }}
                   handleSubmit={onSubmit}
+                  handleFileUpload={onFileUpload}
                   onImportError={() => {
                     removeFormReference();
                     notificationsStore.displayNotification({

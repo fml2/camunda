@@ -9,8 +9,8 @@ package io.camunda.optimize.upgrade.service;
 
 import io.camunda.optimize.service.security.util.LocalDateUtil;
 import io.camunda.optimize.upgrade.db.SchemaUpgradeClient;
+import io.camunda.optimize.upgrade.db.index.UpdateLogEntryIndex;
 import io.camunda.optimize.upgrade.es.SchemaUpgradeClientES;
-import io.camunda.optimize.upgrade.es.index.UpdateLogEntryIndex;
 import io.camunda.optimize.upgrade.es.index.UpdateLogEntryIndexES;
 import io.camunda.optimize.upgrade.os.SchemaUpgradeClientOS;
 import io.camunda.optimize.upgrade.os.index.UpdateLogEntryIndexOS;
@@ -20,23 +20,23 @@ import java.util.stream.Collectors;
 
 public class UpgradeStepLogService {
 
-  public void initializeOrUpdate(final SchemaUpgradeClient<?, ?> schemaUpgradeClient) {
-    if (schemaUpgradeClient instanceof SchemaUpgradeClientES esClient) {
+  public void initializeOrUpdate(final SchemaUpgradeClient<?, ?, ?> schemaUpgradeClient) {
+    if (schemaUpgradeClient instanceof final SchemaUpgradeClientES esClient) {
       esClient.createOrUpdateIndex(new UpdateLogEntryIndexES());
-    } else if (schemaUpgradeClient instanceof SchemaUpgradeClientOS osClient) {
+    } else if (schemaUpgradeClient instanceof final SchemaUpgradeClientOS osClient) {
       osClient.createOrUpdateIndex(new UpdateLogEntryIndexOS());
     }
   }
 
   public void recordAppliedStep(
-      final SchemaUpgradeClient<?, ?> schemaUpgradeClient,
+      final SchemaUpgradeClient<?, ?, ?> schemaUpgradeClient,
       final UpgradeStepLogEntryDto logEntryDto) {
     logEntryDto.setAppliedDate(LocalDateUtil.getCurrentDateTime().toInstant());
     schemaUpgradeClient.upsert(UpdateLogEntryIndex.INDEX_NAME, logEntryDto.getId(), logEntryDto);
   }
 
   public Map<String, UpgradeStepLogEntryDto> getAllAppliedStepsForUpdateToById(
-      final SchemaUpgradeClient<?, ?> schemaUpgradeClient, final String targetOptimizeVersion) {
+      final SchemaUpgradeClient<?, ?, ?> schemaUpgradeClient, final String targetOptimizeVersion) {
     return schemaUpgradeClient.getAppliedUpdateStepsForTargetVersion(targetOptimizeVersion).stream()
         .collect(Collectors.toMap(UpgradeStepLogEntryDto::getId, Function.identity()));
   }

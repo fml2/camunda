@@ -13,10 +13,9 @@ import io.camunda.optimize.upgrade.steps.UpgradeStep;
 import io.camunda.optimize.upgrade.steps.UpgradeStepType;
 import java.util.HashSet;
 import java.util.Set;
-import lombok.EqualsAndHashCode;
 
-@EqualsAndHashCode(callSuper = true)
 public class CreateIndexStep extends UpgradeStep {
+
   private Set<String> readOnlyAliases = new HashSet<>();
 
   public CreateIndexStep(final IndexMappingCreator index) {
@@ -34,7 +33,22 @@ public class CreateIndexStep extends UpgradeStep {
   }
 
   @Override
-  public void performUpgradeStep(final SchemaUpgradeClient<?, ?> schemaUpgradeClient) {
+  public void performUpgradeStep(final SchemaUpgradeClient<?, ?, ?> schemaUpgradeClient) {
     schemaUpgradeClient.createOrUpdateIndex(index, readOnlyAliases);
+  }
+
+  @Override
+  protected boolean canEqual(final Object other) {
+    return other instanceof CreateIndexStep;
+  }
+
+  @Override
+  public int hashCode() {
+    return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+  }
+
+  @Override
+  public boolean equals(final Object o) {
+    return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
   }
 }

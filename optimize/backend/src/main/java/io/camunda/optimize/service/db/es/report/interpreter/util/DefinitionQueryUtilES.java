@@ -23,11 +23,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class DefinitionQueryUtilES {
+public final class DefinitionQueryUtilES {
+
+  private DefinitionQueryUtilES() {}
 
   public static BoolQuery createDefinitionQuery(
       final String definitionKey, final List<String> tenantIds, final AbstractInstanceIndex type) {
@@ -79,7 +78,7 @@ public class DefinitionQueryUtilES {
       final List<String> tenantIds,
       final AbstractInstanceIndex<?> type,
       final UnaryOperator<String> getLatestVersionToKey) {
-    BoolQuery.Builder bb = new BoolQuery.Builder();
+    final BoolQuery.Builder bb = new BoolQuery.Builder();
     bb.must(
             m ->
                 m.term(

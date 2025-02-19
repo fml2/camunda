@@ -18,12 +18,10 @@ import io.camunda.optimize.service.db.es.OptimizeElasticsearchClient;
 import io.camunda.optimize.service.db.es.builders.OptimizeUpdateOperationBuilderES;
 import io.camunda.optimize.service.db.repository.es.TaskRepositoryES;
 import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCondition;
-import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Conditional;
 
-@AllArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public abstract class AbstractProcessDefinitionWriterES {
 
@@ -32,12 +30,21 @@ public abstract class AbstractProcessDefinitionWriterES {
   protected final OptimizeElasticsearchClient esClient;
   protected final TaskRepositoryES taskRepositoryES;
 
+  public AbstractProcessDefinitionWriterES(
+      final ObjectMapper objectMapper,
+      final OptimizeElasticsearchClient esClient,
+      final TaskRepositoryES taskRepositoryES) {
+    this.objectMapper = objectMapper;
+    this.esClient = esClient;
+    this.taskRepositoryES = taskRepositoryES;
+  }
+
   abstract Script createUpdateScript(ProcessDefinitionOptimizeDto processDefinitionDtos);
 
   public void addImportProcessDefinitionToRequest(
       final BulkRequest.Builder bulkRequestBuilder,
       final ProcessDefinitionOptimizeDto processDefinitionDto) {
-    Script updateScript = createUpdateScript(processDefinitionDto);
+    final Script updateScript = createUpdateScript(processDefinitionDto);
     bulkRequestBuilder.operations(
         b ->
             b.update(

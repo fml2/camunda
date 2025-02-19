@@ -10,9 +10,11 @@ package io.camunda.search.clients;
 import io.camunda.search.entities.FormEntity;
 import io.camunda.search.query.FormQuery;
 import io.camunda.search.query.SearchQueryResult;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.SecurityContext;
 
-public interface FormSearchClient extends AutoCloseable {
+public interface FormSearchClient {
 
-  SearchQueryResult<FormEntity> searchForms(FormQuery filter, Authentication authentication);
+  SearchQueryResult<FormEntity> searchForms(FormQuery filter);
+
+  FormSearchClient withSecurityContext(SecurityContext securityContext);
 }

@@ -9,7 +9,6 @@ package io.camunda.operate.webapp.rest;
 
 import static io.camunda.operate.webapp.rest.ProcessRestService.PROCESS_URL;
 
-import io.camunda.operate.entities.BatchOperationEntity;
 import io.camunda.operate.util.rest.ValidLongId;
 import io.camunda.operate.webapp.InternalAPIErrorController;
 import io.camunda.operate.webapp.elasticsearch.reader.ProcessInstanceReader;
@@ -20,9 +19,10 @@ import io.camunda.operate.webapp.rest.dto.ProcessGroupDto;
 import io.camunda.operate.webapp.rest.dto.ProcessRequestDto;
 import io.camunda.operate.webapp.rest.exception.NotAuthorizedException;
 import io.camunda.operate.webapp.security.identity.IdentityPermission;
-import io.camunda.operate.webapp.security.identity.PermissionsService;
+import io.camunda.operate.webapp.security.permission.PermissionsService;
 import io.camunda.operate.webapp.writer.BatchOperationWriter;
 import io.camunda.webapps.schema.entities.operate.ProcessEntity;
+import io.camunda.webapps.schema.entities.operation.BatchOperationEntity;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -36,12 +36,10 @@ import org.springframework.web.bind.annotation.*;
 public class ProcessRestService extends InternalAPIErrorController {
 
   public static final String PROCESS_URL = "/api/processes";
-  @Autowired protected ProcessReader processReader;
-  @Autowired protected ProcessInstanceReader processInstanceReader;
 
-  @Autowired(required = false)
-  protected PermissionsService permissionsService;
-
+  @Autowired private ProcessReader processReader;
+  @Autowired private ProcessInstanceReader processInstanceReader;
+  @Autowired private PermissionsService permissionsService;
   @Autowired private BatchOperationWriter batchOperationWriter;
 
   @Operation(summary = "Get process BPMN XML")
@@ -82,23 +80,25 @@ public class ProcessRestService extends InternalAPIErrorController {
   public BatchOperationEntity deleteProcessDefinition(
       @ValidLongId @PathVariable("id") final String processId) {
     final ProcessEntity processEntity = processReader.getProcess(Long.valueOf(processId));
-    checkIdentityDeletePermission(processEntity.getBpmnProcessId());
+    checkIdentityDeletePermission(processEntity.getKey());
     return batchOperationWriter.scheduleDeleteProcessDefinition(processEntity);
   }
 
   private void checkIdentityReadPermission(final String bpmnProcessId) {
-    if (permissionsService != null
-        && !permissionsService.hasPermissionForProcess(bpmnProcessId, IdentityPermission.READ)) {
+    if (permissionsService.permissionsEnabled()
+        && !permissionsService.hasPermissionForProcess(
+            bpmnProcessId, IdentityPermission.READ_PROCESS_DEFINITION)) {
       throw new NotAuthorizedException(
           String.format("No read permission for process %s", bpmnProcessId));
     }
   }
 
-  private void checkIdentityDeletePermission(final String bpmnProcessId) {
-    if (permissionsService != null
-        && !permissionsService.hasPermissionForProcess(bpmnProcessId, IdentityPermission.DELETE)) {
+  private void checkIdentityDeletePermission(final Long processDefinitionKey) {
+    if (permissionsService.permissionsEnabled()
+        && !permissionsService.hasPermissionForResource(
+            processDefinitionKey, IdentityPermission.DELETE_PROCESS)) {
       throw new NotAuthorizedException(
-          String.format("No delete permission for process %s", bpmnProcessId));
+          String.format("No delete permission for process definition %s", processDefinitionKey));
     }
   }
 }

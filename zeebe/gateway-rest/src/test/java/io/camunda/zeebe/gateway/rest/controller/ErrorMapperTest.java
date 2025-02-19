@@ -14,7 +14,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import com.fasterxml.jackson.core.JsonParseException;
 import io.atomix.cluster.messaging.MessagingException.ConnectionClosed;
 import io.camunda.search.exception.CamundaSearchException;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
 import io.camunda.service.UserTaskServices;
 import io.camunda.service.exception.CamundaBrokerException;
 import io.camunda.zeebe.broker.client.api.PartitionNotFoundException;
@@ -22,6 +22,7 @@ import io.camunda.zeebe.broker.client.api.RequestRetriesExhaustedException;
 import io.camunda.zeebe.broker.client.api.dto.BrokerError;
 import io.camunda.zeebe.gateway.protocol.rest.UserTaskCompletionRequest;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
+import io.camunda.zeebe.gateway.rest.cache.ProcessCache;
 import io.camunda.zeebe.msgpack.spec.MsgpackException;
 import io.camunda.zeebe.protocol.record.ErrorCode;
 import io.netty.channel.ConnectTimeoutException;
@@ -49,6 +50,7 @@ public class ErrorMapperTest extends RestControllerTest {
   private static final String USER_TASKS_BASE_URL = "/v1/user-tasks";
 
   @MockBean UserTaskServices userTaskServices;
+  @MockBean ProcessCache processCache;
   @Autowired private View error;
 
   @BeforeEach
@@ -518,6 +520,35 @@ public class ErrorMapperTest extends RestControllerTest {
         .isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
         .expectHeader()
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .expectBody(ProblemDetail.class)
+        .isEqualTo(expectedBody);
+  }
+
+  @Test
+  void shouldYieldUnavailableWhenPartitionPausesProcessing() {
+    // given
+    Mockito.when(userTaskServices.completeUserTask(anyLong(), any(), anyString()))
+        .thenReturn(
+            CompletableFuture.failedFuture(
+                new CamundaBrokerException(
+                    new BrokerError(ErrorCode.PARTITION_UNAVAILABLE, "Just an error"))));
+
+    final var request = new UserTaskCompletionRequest();
+    final var expectedBody =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "Just an error");
+    expectedBody.setTitle(ErrorCode.PARTITION_UNAVAILABLE.name());
+    expectedBody.setInstance(URI.create(USER_TASKS_BASE_URL + "/1/completion"));
+
+    // when / then
+    webClient
+        .post()
+        .uri(USER_TASKS_BASE_URL + "/1/completion")
+        .accept(MediaType.APPLICATION_JSON)
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(Mono.just(request), UserTaskCompletionRequest.class)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
         .expectBody(ProblemDetail.class)
         .isEqualTo(expectedBody);
   }

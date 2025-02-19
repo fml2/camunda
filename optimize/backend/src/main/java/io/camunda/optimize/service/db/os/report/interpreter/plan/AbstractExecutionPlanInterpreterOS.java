@@ -7,7 +7,7 @@
  */
 package io.camunda.optimize.service.db.os.report.interpreter.plan;
 
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.UnitDSL.seconds;
+import static io.camunda.optimize.service.db.os.client.dsl.UnitDSL.seconds;
 import static io.camunda.optimize.service.util.ExceptionUtil.isInstanceIndexNotFoundException;
 
 import io.camunda.optimize.dto.optimize.query.report.CommandEvaluationResult;
@@ -15,7 +15,7 @@ import io.camunda.optimize.dto.optimize.query.report.single.SingleReportDataDto;
 import io.camunda.optimize.dto.optimize.rest.pagination.PaginationDto;
 import io.camunda.optimize.dto.optimize.rest.pagination.PaginationScrollableDto;
 import io.camunda.optimize.service.db.os.OptimizeOpenSearchClient;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.RequestDSL;
+import io.camunda.optimize.service.db.os.client.dsl.RequestDSL;
 import io.camunda.optimize.service.db.os.report.interpreter.RawResult;
 import io.camunda.optimize.service.db.os.report.interpreter.groupby.GroupByInterpreterOS;
 import io.camunda.optimize.service.db.os.report.interpreter.view.ViewInterpreterOS;
@@ -28,17 +28,19 @@ import io.camunda.optimize.service.exceptions.OptimizeRuntimeException;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Optional;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.query_dsl.BoolQuery;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchRequest.Builder;
 import org.opensearch.client.opensearch.core.SearchResponse;
+import org.slf4j.Logger;
 
-@Slf4j
 public abstract class AbstractExecutionPlanInterpreterOS<
         DATA extends SingleReportDataDto, PLAN extends ExecutionPlan>
     implements ExecutionPlanInterpreter<DATA, PLAN> {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(AbstractExecutionPlanInterpreterOS.class);
 
   @Override
   public CommandEvaluationResult<Object> interpret(
@@ -46,12 +48,12 @@ public abstract class AbstractExecutionPlanInterpreterOS<
     SearchResponse response;
     try {
       response = executeRequests(executionContext, createBaseQuerySearchRequest(executionContext));
-    } catch (RuntimeException e) {
+    } catch (final RuntimeException e) {
       if (isInstanceIndexNotFoundException(e)) {
         if (executionContext.getReportData().getDefinitions().size() > 1) {
           // If there are multiple data sources, we retry with the process instance index multi
           // alias to get a result
-          log.info(
+          LOG.info(
               "Could not evaluate report because at least one required instance index {} does not exist. Retrying with index "
                   + "multi alias",
               Arrays.asList(getIndexNames(executionContext)));
@@ -59,13 +61,13 @@ public abstract class AbstractExecutionPlanInterpreterOS<
           final Builder searchRequestBuilder = createBaseQuerySearchRequest(executionContext);
           try {
             response = executeRequests(executionContext, searchRequestBuilder);
-          } catch (RuntimeException ex) {
+          } catch (final RuntimeException ex) {
             if (isInstanceIndexNotFoundException(e)) {
               return returnEmptyResult(executionContext);
             } else {
               throw ex;
             }
-          } catch (IOException ex) {
+          } catch (final IOException ex) {
             throw e;
           }
         } else {
@@ -74,12 +76,12 @@ public abstract class AbstractExecutionPlanInterpreterOS<
       } else {
         throw e;
       }
-    } catch (IOException e) {
-      String reason =
+    } catch (final IOException e) {
+      final String reason =
           String.format(
               "Could not evaluate %s report for definitions [%s]",
               executionContext.getPlan(), executionContext.getReportData().getDefinitions());
-      log.error(reason, e);
+      LOG.error(reason, e);
       throw new OptimizeRuntimeException(reason, e);
     }
     return retrieveQueryResult(response, executionContext);
@@ -107,7 +109,7 @@ public abstract class AbstractExecutionPlanInterpreterOS<
             .adjustQuery(baseQueryBuilder(executionContext), executionContext)
             .build()
             .toQuery();
-    SearchRequest.Builder searchRequestBuilder =
+    final SearchRequest.Builder searchRequestBuilder =
         new SearchRequest.Builder()
             .index(Arrays.asList(getIndexNames(executionContext)))
             .query(query)
@@ -131,9 +133,9 @@ public abstract class AbstractExecutionPlanInterpreterOS<
       final ExecutionContext<DATA, PLAN> executionContext,
       final SearchRequest.Builder searchRequestBuilder)
       throws IOException {
-    SearchResponse<?> response = executeSearch(executionContext, searchRequestBuilder);
-    String[] indices = getIndexNames(executionContext);
-    Query countQuery = unfilteredBaseQueryBuilder(executionContext).build().toQuery();
+    final SearchResponse<?> response = executeSearch(executionContext, searchRequestBuilder);
+    final String[] indices = getIndexNames(executionContext);
+    final Query countQuery = unfilteredBaseQueryBuilder(executionContext).build().toQuery();
     executionContext.setUnfilteredTotalInstanceCount(getOsClient().count(indices, countQuery));
     return response;
   }
@@ -142,11 +144,12 @@ public abstract class AbstractExecutionPlanInterpreterOS<
       final ExecutionContext<DATA, PLAN> executionContext,
       final SearchRequest.Builder searchRequestBuilder)
       throws IOException {
-    PaginationDto paginationInfo = executionContext.getPagination().orElse(new PaginationDto());
-    String errorMsg = "Failed to execute search request";
-    if (paginationInfo instanceof PaginationScrollableDto scrollableDto) {
-      String scrollId = scrollableDto.getScrollId();
-      Integer timeout = scrollableDto.getScrollTimeout();
+    final PaginationDto paginationInfo =
+        executionContext.getPagination().orElse(new PaginationDto());
+    final String errorMsg = "Failed to execute search request";
+    if (paginationInfo instanceof final PaginationScrollableDto scrollableDto) {
+      final String scrollId = scrollableDto.getScrollId();
+      final Integer timeout = scrollableDto.getScrollTimeout();
       if (scrollId != null && !scrollId.isEmpty()) {
         return getOsClient()
             .scroll(RequestDSL.scrollRequest(scrollId, seconds(timeout).time()), Object.class);
@@ -155,13 +158,14 @@ public abstract class AbstractExecutionPlanInterpreterOS<
             .search(searchRequestBuilder.scroll(seconds(timeout)), Object.class, errorMsg);
       }
     } else {
-      return getOsClient().search(searchRequestBuilder, Object.class, errorMsg);
+      return getOsClient()
+          .searchWithFixedAggregations(searchRequestBuilder, Object.class, errorMsg);
     }
   }
 
   private CommandEvaluationResult<Object> returnEmptyResult(
       final ExecutionContext<DATA, PLAN> executionContext) {
-    log.info("Could not evaluate report. Returning empty result instead");
+    LOG.info("Could not evaluate report. Returning empty result instead");
     return ResultInterpreter.interpret(
         executionContext,
         new CompositeCommandResult(
@@ -190,7 +194,7 @@ public abstract class AbstractExecutionPlanInterpreterOS<
         .getPagination()
         .ifPresent(
             plainPagination -> {
-              PaginationScrollableDto scrollablePagination =
+              final PaginationScrollableDto scrollablePagination =
                   PaginationScrollableDto.fromPaginationDto(plainPagination);
               scrollablePagination.setScrollId(response.scrollId());
               reportResult.setPagination(scrollablePagination);

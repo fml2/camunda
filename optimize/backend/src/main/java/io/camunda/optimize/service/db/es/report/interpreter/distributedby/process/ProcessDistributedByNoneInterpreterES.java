@@ -24,17 +24,20 @@ import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCon
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class ProcessDistributedByNoneInterpreterES
     extends AbstractProcessDistributedByInterpreterES {
-  @Getter private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  public ProcessDistributedByNoneInterpreterES(
+      final ProcessViewInterpreterFacadeES viewInterpreter) {
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Set<ProcessDistributedBy> getSupportedDistributedBys() {
@@ -50,9 +53,9 @@ public class ProcessDistributedByNoneInterpreterES
 
   @Override
   public List<DistributedByResult> retrieveResult(
-      ResponseBody<?> response,
-      Map<String, Aggregate> aggregations,
-      ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
+      final ResponseBody<?> response,
+      final Map<String, Aggregate> aggregations,
+      final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
     final ViewResult viewResult = viewInterpreter.retrieveResult(response, aggregations, context);
     return List.of(DistributedByResult.createDistributedByNoneResult(viewResult));
   }
@@ -63,5 +66,9 @@ public class ProcessDistributedByNoneInterpreterES
     return List.of(
         DistributedByResult.createDistributedByNoneResult(
             viewInterpreter.createEmptyResult(context)));
+  }
+
+  public ProcessViewInterpreterFacadeES getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }

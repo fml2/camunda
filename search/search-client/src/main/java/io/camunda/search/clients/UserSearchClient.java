@@ -10,9 +10,11 @@ package io.camunda.search.clients;
 import io.camunda.search.entities.UserEntity;
 import io.camunda.search.query.SearchQueryResult;
 import io.camunda.search.query.UserQuery;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.SecurityContext;
 
-public interface UserSearchClient extends AutoCloseable {
+public interface UserSearchClient {
 
-  SearchQueryResult<UserEntity> searchUsers(UserQuery filter, Authentication authentication);
+  SearchQueryResult<UserEntity> searchUsers(UserQuery userQuery);
+
+  UserSearchClient withSecurityContext(SecurityContext securityContext);
 }

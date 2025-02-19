@@ -27,8 +27,11 @@ import io.camunda.zeebe.journal.record.PersistedJournalRecord;
 import io.camunda.zeebe.journal.record.RecordData;
 import io.camunda.zeebe.journal.util.MockJournalMetastore;
 import io.camunda.zeebe.journal.util.PosixPathAssert;
+import io.camunda.zeebe.util.CheckedRunnable;
 import io.camunda.zeebe.util.buffer.BufferUtil;
 import io.camunda.zeebe.util.buffer.DirectBufferWriter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -45,6 +48,7 @@ import org.agrona.CloseHelper;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -57,6 +61,7 @@ class SegmentedJournalTest {
   private TestJournalFactory journalFactory;
 
   private @TempDir Path directory;
+  @AutoClose private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
   private SegmentedJournal journal;
 
   private final List<AutoCloseable> closeables = new ArrayList<>();
@@ -681,7 +686,7 @@ class SegmentedJournalTest {
     // given
     final var segmentSize = 4 * 1024 * 1024;
     final var builder =
-        SegmentedJournal.builder()
+        SegmentedJournal.builder(meterRegistry)
             .withPreallocateSegmentFiles(true)
             .withMaxSegmentSize(segmentSize)
             .withDirectory(tmpDir.toFile())
@@ -704,7 +709,7 @@ class SegmentedJournalTest {
     // given
     final var segmentSize = 4 * 1024 * 1024;
     final var builder =
-        SegmentedJournal.builder()
+        SegmentedJournal.builder(meterRegistry)
             .withPreallocateSegmentFiles(false)
             .withMaxSegmentSize(segmentSize)
             .withDirectory(tmpDir.toFile())
@@ -888,7 +893,7 @@ class SegmentedJournalTest {
               barrier.arriveAndAwaitAdvance();
               barrier.arriveAndAwaitAdvance();
             });
-    final var flushed = CompletableFuture.runAsync(journal::flush);
+    final var flushed = CompletableFuture.runAsync(CheckedRunnable.toUnchecked(journal::flush));
 
     // then
     barrier.arriveAndAwaitAdvance();

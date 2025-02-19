@@ -14,6 +14,7 @@ import io.atomix.cluster.MemberId;
 import io.atomix.cluster.Node;
 import io.atomix.cluster.discovery.BootstrapDiscoveryProvider;
 import io.atomix.cluster.impl.DiscoveryMembershipProtocol;
+import io.camunda.zeebe.dynamic.config.metrics.TopologyMetrics;
 import io.camunda.zeebe.dynamic.config.serializer.ProtoBufSerializer;
 import io.camunda.zeebe.dynamic.config.state.ClusterConfiguration;
 import io.camunda.zeebe.dynamic.config.state.MemberState;
@@ -22,19 +23,18 @@ import io.camunda.zeebe.scheduler.ActorScheduler;
 import io.camunda.zeebe.scheduler.future.ActorFuture;
 import io.camunda.zeebe.scheduler.testing.TestActorFuture;
 import io.camunda.zeebe.test.util.socket.SocketUtil;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 import org.agrona.CloseHelper;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Named;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.Test;
 
 final class ClusterConfigurationGossiperTest {
 
@@ -44,6 +44,8 @@ final class ClusterConfigurationGossiperTest {
   private TestGossiper node1;
   private TestGossiper node2;
   private TestGossiper node3;
+  @AutoClose private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final TopologyMetrics topologyMetrics = new TopologyMetrics(meterRegistry);
 
   @BeforeEach
   void setup() {
@@ -55,13 +57,20 @@ final class ClusterConfigurationGossiperTest {
     CloseHelper.quietCloseAll(node1, node2, node3, actorScheduler);
   }
 
-  @ParameterizedTest
-  @MethodSource("provideConfig")
-  void shouldPropagateTopologyUpdate(final ClusterConfigurationGossiperConfig config) {
+  @Test
+  void shouldPropagateTopologyUpdate() {
     // given
-    node1 = new TestGossiper(createClusterNode(clusterNodes.get(0), clusterNodes), config);
-    node2 = new TestGossiper(createClusterNode(clusterNodes.get(1), clusterNodes), config);
-    node3 = new TestGossiper(createClusterNode(clusterNodes.get(2), clusterNodes), config);
+    final var config =
+        new ClusterConfigurationGossiperConfig(Duration.ofMillis(100), Duration.ofSeconds(1), 0);
+    node1 =
+        new TestGossiper(
+            createClusterNode(clusterNodes.get(0), clusterNodes), config, topologyMetrics);
+    node2 =
+        new TestGossiper(
+            createClusterNode(clusterNodes.get(1), clusterNodes), config, topologyMetrics);
+    node3 =
+        new TestGossiper(
+            createClusterNode(clusterNodes.get(2), clusterNodes), config, topologyMetrics);
 
     node1.start();
     node2.start();
@@ -80,26 +89,12 @@ final class ClusterConfigurationGossiperTest {
         .untilAsserted(() -> assertThat(node3.clusterConfiguration).isEqualTo(node1Topology));
   }
 
-  private static Stream<Arguments> provideConfig() {
-    return Stream.of(
-        Arguments.of(
-            Named.of(
-                "by gossip", // Disable sync
-                new ClusterConfigurationGossiperConfig(
-                    false, Duration.ofMinutes(10), Duration.ofSeconds(1), 2))),
-        Arguments.of(
-            Named.of(
-                "by sync", // Set gossipFanout to 0
-                new ClusterConfigurationGossiperConfig(
-                    true, Duration.ofMillis(100), Duration.ofSeconds(1), 0))));
-  }
-
   private Node createNode(final String id) {
     return Node.builder().withId(id).withPort(SocketUtil.getNextAddress().getPort()).build();
   }
 
   private AtomixCluster createClusterNode(final Node localNode, final Collection<Node> nodes) {
-    return AtomixCluster.builder()
+    return AtomixCluster.builder(meterRegistry)
         .withAddress(localNode.address())
         .withMemberId(localNode.id().id())
         .withMembershipProvider(new BootstrapDiscoveryProvider(nodes))
@@ -113,7 +108,9 @@ final class ClusterConfigurationGossiperTest {
     private ClusterConfiguration clusterConfiguration;
 
     private TestGossiper(
-        final AtomixCluster atomixCluster, final ClusterConfigurationGossiperConfig config) {
+        final AtomixCluster atomixCluster,
+        final ClusterConfigurationGossiperConfig config,
+        final TopologyMetrics topologyMetrics) {
 
       gossiper =
           new ClusterConfigurationGossiper(
@@ -122,7 +119,8 @@ final class ClusterConfigurationGossiperTest {
               atomixCluster.getMembershipService(),
               new ProtoBufSerializer(),
               config,
-              this::mergeTopology);
+              this::mergeTopology,
+              topologyMetrics);
       this.atomixCluster = atomixCluster;
     }
 

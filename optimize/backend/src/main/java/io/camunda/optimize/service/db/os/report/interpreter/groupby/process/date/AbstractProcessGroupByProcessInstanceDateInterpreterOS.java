@@ -7,9 +7,9 @@
  */
 package io.camunda.optimize.service.db.os.report.interpreter.groupby.process.date;
 
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.AggregationDSL.withSubaggregations;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.and;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.exists;
+import static io.camunda.optimize.service.db.os.client.dsl.AggregationDSL.withSubaggregations;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.and;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.exists;
 import static io.camunda.optimize.service.db.os.report.interpreter.util.FilterLimitedAggregationUtilOS.unwrapFilterLimitedAggregations;
 
 import io.camunda.optimize.dto.optimize.query.report.single.configuration.DistributedByType;
@@ -22,7 +22,6 @@ import io.camunda.optimize.service.db.os.report.interpreter.RawResult;
 import io.camunda.optimize.service.db.os.report.interpreter.groupby.process.AbstractProcessGroupByInterpreterOS;
 import io.camunda.optimize.service.db.os.report.service.DateAggregationServiceOS;
 import io.camunda.optimize.service.db.os.report.service.MinMaxStatsServiceOS;
-import io.camunda.optimize.service.db.os.util.AggregateHelperOS;
 import io.camunda.optimize.service.db.report.ExecutionContext;
 import io.camunda.optimize.service.db.report.MinMaxStatDto;
 import io.camunda.optimize.service.db.report.groupby.ProcessGroupByProcessInstanceDateInterpreter;
@@ -35,7 +34,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
@@ -43,9 +41,10 @@ import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
 
-@RequiredArgsConstructor
 public abstract class AbstractProcessGroupByProcessInstanceDateInterpreterOS
     extends AbstractProcessGroupByInterpreterOS {
+
+  public AbstractProcessGroupByProcessInstanceDateInterpreterOS() {}
 
   protected abstract ConfigurationService getConfigurationService();
 
@@ -125,10 +124,8 @@ public abstract class AbstractProcessGroupByProcessInstanceDateInterpreterOS
       final CompositeCommandResult result,
       final SearchResponse<RawResult> response,
       final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
-    final Map<String, Aggregate> fixedAggregations =
-        AggregateHelperOS.withNullValues(response.hits().total().value(), response.aggregations());
     ProcessGroupByProcessInstanceDateInterpreter.addQueryResult(
-        processAggregations(response, fixedAggregations, context),
+        processAggregations(response, response.aggregations(), context),
         getDistributedByInterpreter().isKeyOfNumericType(context),
         result,
         context);
@@ -146,7 +143,7 @@ public abstract class AbstractProcessGroupByProcessInstanceDateInterpreterOS
     return unwrapFilterLimitedAggregations(aggregations)
         .map(
             unwrappedLimitedAggregations -> {
-              Map<String, Map<String, Aggregate>> keyToAggregationMap =
+              final Map<String, Map<String, Aggregate>> keyToAggregationMap =
                   getDateAggregationService()
                       .mapDateAggregationsToKeyAggregationMap(
                           unwrappedLimitedAggregations, context.getTimezone());
@@ -188,7 +185,7 @@ public abstract class AbstractProcessGroupByProcessInstanceDateInterpreterOS
     // add sibling distributedBy aggregation to enrich context with all distributed by keys,
     // required for variable distribution
     if (DistributedByType.VARIABLE.equals(getDistributedByType(context.getReportData()))) {
-      Map<String, Aggregation> subAggregations =
+      final Map<String, Aggregation> subAggregations =
           MapUtil.combineUniqueMaps(
               aggregation.getValue().aggregations(),
               getDistributedByInterpreter().createAggregations(context, baseQuery));

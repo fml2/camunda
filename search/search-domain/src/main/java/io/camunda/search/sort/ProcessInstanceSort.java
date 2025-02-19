@@ -27,37 +27,32 @@ public record ProcessInstanceSort(List<FieldSorting> orderings) implements SortO
       implements ObjectBuilder<ProcessInstanceSort> {
 
     public Builder processInstanceKey() {
-      currentOrdering = new FieldSorting("key", null);
+      currentOrdering = new FieldSorting("processInstanceKey", null);
       return this;
     }
 
     public Builder processDefinitionId() {
-      currentOrdering = new FieldSorting("bpmnProcessId", null);
+      currentOrdering = new FieldSorting("processDefinitionId", null);
       return this;
     }
 
     public Builder processDefinitionName() {
-      currentOrdering = new FieldSorting("processName", null);
+      currentOrdering = new FieldSorting("processDefinitionName", null);
       return this;
     }
 
     public Builder processDefinitionVersion() {
-      currentOrdering = new FieldSorting("processVersion", null);
+      currentOrdering = new FieldSorting("processDefinitionVersion", null);
       return this;
     }
 
     public Builder processDefinitionVersionTag() {
-      currentOrdering = new FieldSorting("processVersionTag", null);
+      currentOrdering = new FieldSorting("processDefinitionVersionTag", null);
       return this;
     }
 
     public Builder processDefinitionKey() {
       currentOrdering = new FieldSorting("processDefinitionKey", null);
-      return this;
-    }
-
-    public Builder rootProcessInstanceKey() {
-      currentOrdering = new FieldSorting("rootProcessInstanceKey", null);
       return this;
     }
 
@@ -68,11 +63,6 @@ public record ProcessInstanceSort(List<FieldSorting> orderings) implements SortO
 
     public Builder parentFlowNodeInstanceKey() {
       currentOrdering = new FieldSorting("parentFlowNodeInstanceKey", null);
-      return this;
-    }
-
-    public Builder treePath() {
-      currentOrdering = new FieldSorting("treePath", null);
       return this;
     }
 
@@ -91,8 +81,8 @@ public record ProcessInstanceSort(List<FieldSorting> orderings) implements SortO
       return this;
     }
 
-    public Builder incident() {
-      currentOrdering = new FieldSorting("incident", null);
+    public Builder hasIncident() {
+      currentOrdering = new FieldSorting("hasIncident", null);
       return this;
     }
 

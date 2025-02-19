@@ -33,6 +33,11 @@
   },
   "packageRules": [
     {
+      "description": "Temporary rule to prevent exposure to CVE-2024-57699 in newer versions of json-smart.",
+      "matchPackageNames": ["net.minidev:json-smart"],
+      "allowedVersions": "<=2.4.11"
+    },
+    {
       "description": "Only patch updates for our maintenance branches to avoid breaking changes.",
       "matchBaseBranches": [
         "/^stable\\/8\\..*/",
@@ -108,18 +113,14 @@
       "additionalBranchPrefix": "fe-"
     },
     {
-      "description": "Exclude frontend deps until Optimize migrates to react-router v6 and react v18",
+      "description": "Exclude frontend deps until Optimize migrates to react-router v6",
       "matchManagers": ["npm", "nvm"],
       "matchFileNames": ["optimize/**"],
       "matchPackagePatterns": [
         "@carbon/react",
         "old-bpmn-js",
-        "react",
-        "react-dom",
         "react-router",
         "react-router-dom",
-        "@types/react",
-        "@types/react-dom",
         "@types/react-router-dom"
       ],
       "enabled": false
@@ -205,6 +206,14 @@
         "mcr\\.microsoft\\.com\\\/playwright:(?<currentValue>.*?)\\s"
       ],
       "depNameTemplate": "mcr.microsoft.com/playwright",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["optimize\\\/docker\\\/test\\\/docker-labels\\.golden\\.json"],
+      "matchStrings": [
+        "(?<depName>docker\\.io\\/library\\/alpine):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
       "datasourceTemplate": "docker"
     }
   ]

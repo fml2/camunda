@@ -9,67 +9,53 @@ package io.camunda.search.es.clients;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
+import co.elastic.clients.elasticsearch._types.WriteResponseBase;
+import co.elastic.clients.elasticsearch.core.DeleteRequest;
+import co.elastic.clients.elasticsearch.core.GetRequest;
+import co.elastic.clients.elasticsearch.core.GetResponse;
+import co.elastic.clients.elasticsearch.core.IndexRequest;
+import co.elastic.clients.elasticsearch.core.ScrollResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
-import io.camunda.search.DocumentCamundaSearchClient;
-import io.camunda.search.SearchClientBasedQueryExecutor;
-import io.camunda.search.clients.AuthorizationSearchClient;
-import io.camunda.search.clients.DecisionDefinitionSearchClient;
-import io.camunda.search.clients.DecisionInstanceSearchClient;
-import io.camunda.search.clients.DecisionRequirementSearchClient;
-import io.camunda.search.clients.FlowNodeInstanceSearchClient;
-import io.camunda.search.clients.FormSearchClient;
-import io.camunda.search.clients.IncidentSearchClient;
-import io.camunda.search.clients.ProcessInstanceSearchClient;
-import io.camunda.search.clients.UserSearchClient;
-import io.camunda.search.clients.UserTaskSearchClient;
-import io.camunda.search.clients.VariableSearchClient;
+import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.indices.GetAliasRequest;
+import co.elastic.clients.elasticsearch.indices.GetAliasResponse;
+import io.camunda.search.clients.DocumentBasedSearchClient;
+import io.camunda.search.clients.DocumentBasedWriteClient;
+import io.camunda.search.clients.core.SearchDeleteRequest;
+import io.camunda.search.clients.core.SearchGetRequest;
+import io.camunda.search.clients.core.SearchGetResponse;
+import io.camunda.search.clients.core.SearchIndexRequest;
 import io.camunda.search.clients.core.SearchQueryRequest;
 import io.camunda.search.clients.core.SearchQueryResponse;
-import io.camunda.search.entities.AuthorizationEntity;
-import io.camunda.search.entities.DecisionDefinitionEntity;
-import io.camunda.search.entities.DecisionInstanceEntity;
-import io.camunda.search.entities.DecisionRequirementsEntity;
-import io.camunda.search.entities.FlowNodeInstanceEntity;
-import io.camunda.search.entities.FormEntity;
-import io.camunda.search.entities.IncidentEntity;
-import io.camunda.search.entities.ProcessInstanceEntity;
-import io.camunda.search.entities.UserEntity;
-import io.camunda.search.entities.UserTaskEntity;
-import io.camunda.search.entities.VariableEntity;
+import io.camunda.search.clients.core.SearchWriteResponse;
+import io.camunda.search.clients.index.IndexAliasRequest;
+import io.camunda.search.clients.index.IndexAliasResponse;
+import io.camunda.search.clients.transformers.SearchTransfomer;
 import io.camunda.search.es.transformers.ElasticsearchTransformers;
+import io.camunda.search.es.transformers.index.IndexAliasRequestTransformer;
+import io.camunda.search.es.transformers.index.IndexAliasResponseTransformer;
+import io.camunda.search.es.transformers.search.SearchDeleteRequestTransformer;
+import io.camunda.search.es.transformers.search.SearchGetRequestTransformer;
+import io.camunda.search.es.transformers.search.SearchGetResponseTransformer;
+import io.camunda.search.es.transformers.search.SearchIndexRequestTransformer;
+import io.camunda.search.es.transformers.search.SearchRequestTransformer;
 import io.camunda.search.es.transformers.search.SearchResponseTransformer;
+import io.camunda.search.es.transformers.search.SearchWriteResponseTransformer;
+import io.camunda.search.exception.CamundaSearchException;
 import io.camunda.search.exception.SearchQueryExecutionException;
-import io.camunda.search.query.AuthorizationQuery;
-import io.camunda.search.query.DecisionDefinitionQuery;
-import io.camunda.search.query.DecisionInstanceQuery;
-import io.camunda.search.query.DecisionRequirementsQuery;
-import io.camunda.search.query.FlowNodeInstanceQuery;
-import io.camunda.search.query.FormQuery;
-import io.camunda.search.query.IncidentQuery;
-import io.camunda.search.query.ProcessInstanceQuery;
-import io.camunda.search.query.SearchQueryResult;
-import io.camunda.search.query.UserQuery;
-import io.camunda.search.query.UserTaskQuery;
-import io.camunda.search.query.VariableQuery;
-import io.camunda.search.security.auth.Authentication;
-import io.camunda.search.transformers.SearchTransfomer;
-import io.camunda.search.transformers.ServiceTransformers;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ElasticsearchSearchClient
-    implements DocumentCamundaSearchClient,
-        AuthorizationSearchClient,
-        DecisionDefinitionSearchClient,
-        DecisionInstanceSearchClient,
-        DecisionRequirementSearchClient,
-        FlowNodeInstanceSearchClient,
-        FormSearchClient,
-        IncidentSearchClient,
-        ProcessInstanceSearchClient,
-        UserTaskSearchClient,
-        UserSearchClient,
-        VariableSearchClient {
+    implements DocumentBasedSearchClient, DocumentBasedWriteClient {
+
+  private static final Logger LOGGER = LoggerFactory.getLogger(ElasticsearchSearchClient.class);
+  private static final String SCROLL_KEEP_ALIVE_TIME = "1m";
 
   private final ElasticsearchClient client;
   private final ElasticsearchTransformers transformers;
@@ -99,103 +85,163 @@ public class ElasticsearchSearchClient
   }
 
   @Override
-  public SearchQueryResult<AuthorizationEntity> searchAuthorizations(
-      final AuthorizationQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, AuthorizationEntity.class);
+  public <T> List<T> findAll(final SearchQueryRequest searchRequest, final Class<T> documentClass) {
+    final List<T> result = new ArrayList<>();
+    String scrollId = null;
+    try {
+      final var request =
+          getSearchRequestTransformer()
+              .toSearchRequestBuilder(searchRequest)
+              .scroll(s -> s.time(SCROLL_KEEP_ALIVE_TIME))
+              .build();
+      final SearchResponse<T> rawSearchResponse = client.search(request, documentClass);
+      scrollId = rawSearchResponse.scrollId();
+      var items = rawSearchResponse.hits().hits().stream().map(Hit::source).toList();
+      result.addAll(items);
+      final int pageSize = Optional.ofNullable(searchRequest.size()).orElse(items.size());
+      while (!items.isEmpty() && items.size() == pageSize) {
+        final ScrollResponse<T> scrollResponse = scroll(scrollId, documentClass);
+        scrollId = scrollResponse.scrollId();
+        items = scrollResponse.hits().hits().stream().map(Hit::source).toList();
+        result.addAll(items);
+      }
+    } catch (final IOException | ElasticsearchException e) {
+      throw new SearchQueryExecutionException("Failed to execute findAll query", e);
+    } finally {
+      clearScroll(scrollId);
+    }
+    return result;
   }
 
   @Override
-  public SearchQueryResult<DecisionDefinitionEntity> searchDecisionDefinitions(
-      final DecisionDefinitionQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, DecisionDefinitionEntity.class);
+  public <T> SearchGetResponse<T> get(
+      final SearchGetRequest getRequest, final Class<T> documentClass) {
+    try {
+      final var requestTransformer = getSearchGetRequestTransformer();
+      final var request = requestTransformer.apply(getRequest);
+      final var rawGetResponse = client.get(request, documentClass);
+      final SearchGetResponseTransformer<T> getResponseTransformer =
+          getSearchGetResponseTransformer();
+      return getResponseTransformer.apply(rawGetResponse);
+    } catch (final IOException | ElasticsearchException ioe) {
+      LOGGER.debug("Failed to execute get request", ioe);
+      throw new SearchQueryExecutionException("Failed to execute get request", ioe);
+    }
   }
 
   @Override
-  public SearchQueryResult<DecisionInstanceEntity> searchDecisionInstances(
-      final DecisionInstanceQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, DecisionInstanceEntity.class);
+  public IndexAliasResponse getAlias(final IndexAliasRequest request) {
+    try {
+      final var requestTransformer = getIndexAliasRequestTransformer();
+      final var elasticRequest = requestTransformer.apply(request);
+      final var response = client.indices().getAlias(elasticRequest);
+      return getIndexAliasResponseTransformer().apply(response);
+    } catch (final IOException e) {
+      throw new CamundaSearchException(e);
+    }
   }
 
   @Override
-  public SearchQueryResult<DecisionRequirementsEntity> searchDecisionRequirements(
-      final DecisionRequirementsQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, DecisionRequirementsEntity.class);
+  public <T> SearchWriteResponse index(final SearchIndexRequest<T> indexRequest) {
+    try {
+      final SearchIndexRequestTransformer<T> requestTransformer =
+          getSearchIndexRequestTransformer();
+      final var request = requestTransformer.apply(indexRequest);
+      final var rawIndexResponse = client.index(request);
+      final var indexResponseTransformer = getSearchWriteResponseTransformer();
+      return indexResponseTransformer.apply(rawIndexResponse);
+    } catch (final IOException | ElasticsearchException ioe) {
+      LOGGER.debug("Failed to execute index request", ioe);
+      throw new SearchQueryExecutionException("Failed to execute index request", ioe);
+    }
   }
 
   @Override
-  public SearchQueryResult<FlowNodeInstanceEntity> searchFlowNodeInstances(
-      final FlowNodeInstanceQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, FlowNodeInstanceEntity.class);
+  public SearchWriteResponse delete(final SearchDeleteRequest deleteRequest) {
+    try {
+      final var requestTransformer = getSearchDeleteRequestTransformer();
+      final var request = requestTransformer.apply(deleteRequest);
+      final var rawDeleteRequest = client.delete(request);
+      final var deleteResponseTransformer = getSearchWriteResponseTransformer();
+      return deleteResponseTransformer.apply(rawDeleteRequest);
+    } catch (final IOException | ElasticsearchException ioe) {
+      LOGGER.debug("Failed to execute delete request", ioe);
+      throw new SearchQueryExecutionException("Failed to execute delete request", ioe);
+    }
   }
 
-  @Override
-  public SearchQueryResult<FormEntity> searchForms(
-      final FormQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, FormEntity.class);
+  private <T> ScrollResponse<T> scroll(final String scrollId, final Class<T> documentClass)
+      throws IOException {
+    return client.scroll(
+        r -> r.scrollId(scrollId).scroll(t -> t.time(SCROLL_KEEP_ALIVE_TIME)), documentClass);
   }
 
-  @Override
-  public SearchQueryResult<IncidentEntity> searchIncidents(
-      final IncidentQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, IncidentEntity.class);
+  private void clearScroll(final String scrollId) {
+    if (scrollId != null) {
+      try {
+        client.clearScroll(r -> r.scrollId(scrollId));
+      } catch (final IOException | ElasticsearchException e) {
+        LOGGER.error("Failed to clear scroll.", e);
+      }
+    }
   }
 
-  @Override
-  public SearchQueryResult<ProcessInstanceEntity> searchProcessInstances(
-      final ProcessInstanceQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, ProcessInstanceEntity.class);
-  }
-
-  @Override
-  public SearchQueryResult<UserEntity> searchUsers(
-      final UserQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, UserEntity.class);
-  }
-
-  @Override
-  public SearchQueryResult<UserTaskEntity> searchUserTasks(
-      final UserTaskQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, UserTaskEntity.class);
-  }
-
-  @Override
-  public SearchQueryResult<VariableEntity> searchVariables(
-      final VariableQuery filter, final Authentication authentication) {
-    final var executor =
-        new SearchClientBasedQueryExecutor(this, ServiceTransformers.newInstance(), authentication);
-    return executor.search(filter, VariableEntity.class);
-  }
-
-  protected SearchTransfomer<SearchQueryRequest, SearchRequest> getSearchRequestTransformer() {
-    return transformers.getTransformer(SearchQueryRequest.class);
+  private SearchRequestTransformer getSearchRequestTransformer() {
+    final SearchTransfomer<SearchQueryRequest, SearchRequest> transformer =
+        transformers.getTransformer(SearchQueryRequest.class);
+    return (SearchRequestTransformer) transformer;
   }
 
   private <T> SearchResponseTransformer<T> getSearchResponseTransformer() {
-    return new SearchResponseTransformer<>(transformers);
+    final SearchTransfomer<SearchResponse<T>, SearchQueryResponse<T>> transformer =
+        transformers.getTransformer(SearchQueryResponse.class);
+    return (SearchResponseTransformer<T>) transformer;
+  }
+
+  private SearchGetRequestTransformer getSearchGetRequestTransformer() {
+    final SearchTransfomer<SearchGetRequest, GetRequest> transformer =
+        transformers.getTransformer(SearchGetRequest.class);
+    return (SearchGetRequestTransformer) transformer;
+  }
+
+  private <T> SearchGetResponseTransformer<T> getSearchGetResponseTransformer() {
+    final SearchTransfomer<GetResponse<T>, SearchGetResponse<T>> transformer =
+        transformers.getTransformer(SearchGetResponse.class);
+    return (SearchGetResponseTransformer<T>) transformer;
+  }
+
+  private <T> SearchIndexRequestTransformer<T> getSearchIndexRequestTransformer() {
+    final SearchTransfomer<SearchIndexRequest<T>, IndexRequest<T>> transformer =
+        transformers.getTransformer(SearchIndexRequest.class);
+    return (SearchIndexRequestTransformer<T>) transformer;
+  }
+
+  private SearchDeleteRequestTransformer getSearchDeleteRequestTransformer() {
+    final SearchTransfomer<SearchDeleteRequest, DeleteRequest> transformer =
+        transformers.getTransformer(SearchDeleteRequest.class);
+    return (SearchDeleteRequestTransformer) transformer;
+  }
+
+  private SearchWriteResponseTransformer getSearchWriteResponseTransformer() {
+    final SearchTransfomer<WriteResponseBase, SearchWriteResponse> transformer =
+        transformers.getTransformer(SearchWriteResponse.class);
+    return (SearchWriteResponseTransformer) transformer;
+  }
+
+  private IndexAliasRequestTransformer getIndexAliasRequestTransformer() {
+    final SearchTransfomer<IndexAliasRequest, GetAliasRequest> transformer =
+        transformers.getTransformer(IndexAliasRequest.class);
+    return (IndexAliasRequestTransformer) transformer;
+  }
+
+  private IndexAliasResponseTransformer getIndexAliasResponseTransformer() {
+    final SearchTransfomer<GetAliasResponse, IndexAliasResponse> transformer =
+        transformers.getTransformer(IndexAliasResponse.class);
+    return (IndexAliasResponseTransformer) transformer;
   }
 
   @Override
-  public void close() throws Exception {
+  public void close() {
     if (client != null) {
       try {
         client._transport().close();

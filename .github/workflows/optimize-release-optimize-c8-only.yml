@@ -43,25 +43,11 @@ jobs:
       DOCKER_IMAGE_TEAM: registry.camunda.cloud/team-optimize/optimize
       DOCKER_IMAGE_DOCKER_HUB: camunda/optimize
       DOCKER_INTERNAL_IMAGE_DOCKER_HUB: europe-west1-docker.pkg.dev/team-infosec/camunda/optimize-8
-      DOCKER_LATEST_TAG: latest
+      DOCKER_LATEST_TAG: 8-latest
     strategy:
       fail-fast: true
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
-
-      - name: Import Secrets
-        id: secrets
-        uses: hashicorp/vault-action@d1720f055e0635fd932a1d2a48f87a666a57906c # v3.0.0
-        with:
-          url: ${{ secrets.VAULT_ADDR }}
-          method: approle
-          roleId: ${{ secrets.VAULT_ROLE_ID }}
-          secretId: ${{ secrets.VAULT_SECRET_ID }}
-          secrets: |
-            secret/data/products/infra/ci/common CAMUNDA_NEXUS_USR;
-            secret/data/products/infra/ci/common CAMUNDA_NEXUS_PSW;
-            secret/data/products/optimize/ci/camunda-optimize REGISTRY_HUB_DOCKER_COM_USR;
-            secret/data/products/optimize/ci/camunda-optimize REGISTRY_HUB_DOCKER_COM_PSW;
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Log Input Variables
         run: |
@@ -72,9 +58,16 @@ jobs:
           echo "IS_DRY_RUN: ${{ inputs.IS_DRY_RUN }}"
 
       - name: Setup Maven
-        uses: ./.github/actions/setup-maven
+        uses: ./.github/actions/setup-build
         with:
-          secrets: ${{ toJSON(secrets) }}
+          dockerhub: true
+          harbor: true
+          maven-cache-key-modifier: optimize
+          maven-version: 3.8.6
+          time-zone: Europe/Berlin
+          vault-address: ${{ secrets.VAULT_ADDR }}
+          vault-role-id: ${{ secrets.VAULT_ROLE_ID }}
+          vault-secret-id: ${{ secrets.VAULT_SECRET_ID }}
 
       - name: Is current release major or minor.
         id: release-type
@@ -132,19 +125,6 @@ jobs:
             echo "TAG=${{ github.event.inputs.RELEASE_VERSION || '0.0.0' }}-optimize"
           } >> "$GITHUB_ENV"
 
-      - name: Login to prod Harbor docker registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
-        with:
-          registry: registry.camunda.cloud
-          username: ${{ steps.secrets.outputs.CAMUNDA_NEXUS_USR }}
-          password: ${{ steps.secrets.outputs.CAMUNDA_NEXUS_PSW }}
-
-      - name: Login to docker hub
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
-        with:
-          username: ${{ steps.secrets.outputs.REGISTRY_HUB_DOCKER_COM_USR }}
-          password: ${{ steps.secrets.outputs.REGISTRY_HUB_DOCKER_COM_PSW }}
-
       - id: "auth"
         name: "Authenticate to Google Cloud"
         uses: "google-github-actions/auth@v2"
@@ -161,25 +141,27 @@ jobs:
           password: ${{ steps.auth.outputs.access_token }}
 
       - name: Checkout release branch
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: ${{ env.BRANCH }}
           fetch-depth: 0
 
-      
       - name: "Read Java / Version Info"
         id: "pom-info"
         uses: YunaBraska/java-info-action@main
+        with:
+          work-dir: ./optimize
 
       - name: Configure GitHub user
         run: |
-          git config --global user.email "github-actions[release]"
-          git config --global user.name "github-actions[release]@users.noreply.github.com"
+          git config --global user.name "github-actions[release]"
+          git config --global user.email "github-actions[release]@users.noreply.github.com"
 
       - name: Prepare release
         run: |
           mvn -f optimize \
-            -DpushChanges=false \
+            -DpushChanges="${{ github.event.inputs.IS_DRY_RUN != 'true' }}" \
+            -DremoteTagging="${{ github.event.inputs.IS_DRY_RUN != 'true' }}" \
             -DskipTests=true \
             -DignoreSnapshots=true \
             -Prelease,runAssembly \
@@ -192,15 +174,9 @@ jobs:
             --fail-at-end \
             -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
 
-      - name: Push changes
-        if: env.IS_DRY_RUN == 'false'
-        run: |
-          git push --tags
-          git push --all
-
       - name: Perform release
         run: |
-          mvn -f optimize \
+          ./mvnw -f optimize \
             -DlocalCheckout=true \
             -DskipTests=true \
             -B \
@@ -219,10 +195,10 @@ jobs:
           fi
 
       - name: Create a GitHub release
-        if: ${{ env.IS_RC == 'false' && env.DRY_RUN == 'false' }}
+        if: ${{ env.IS_RC == 'false' && env.IS_DRY_RUN == 'false' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: octokit/request-action@v2.3.1
+        uses: octokit/request-action@v2.4.0
         with:
           route: POST /repos/camunda/camunda/releases
           draft: true
@@ -287,7 +263,7 @@ jobs:
           export VERSION="${RELEASE_VERSION}"
           export DATE="$(date +%FT%TZ)"
           export REVISION="${REVISION}"
-          export BASE_IMAGE=docker.io/library/alpine:3.20.2
+          export BASE_IMAGE=docker.io/library/alpine:3.21.3
 
           # if CI (GHA) export the variables for pushing in a later step
           if [ "${CI}" = "true" ]; then

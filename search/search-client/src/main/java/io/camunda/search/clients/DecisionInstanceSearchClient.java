@@ -10,10 +10,11 @@ package io.camunda.search.clients;
 import io.camunda.search.entities.DecisionInstanceEntity;
 import io.camunda.search.query.DecisionInstanceQuery;
 import io.camunda.search.query.SearchQueryResult;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.SecurityContext;
 
-public interface DecisionInstanceSearchClient extends AutoCloseable {
+public interface DecisionInstanceSearchClient {
 
-  SearchQueryResult<DecisionInstanceEntity> searchDecisionInstances(
-      DecisionInstanceQuery filter, Authentication authentication);
+  SearchQueryResult<DecisionInstanceEntity> searchDecisionInstances(DecisionInstanceQuery filter);
+
+  DecisionInstanceSearchClient withSecurityContext(SecurityContext securityContext);
 }

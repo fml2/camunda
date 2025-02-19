@@ -9,7 +9,7 @@ package io.camunda.tasklist.schema.manager;
 
 import io.camunda.tasklist.schema.IndexMapping;
 import io.camunda.tasklist.schema.IndexMapping.IndexMappingProperty;
-import io.camunda.tasklist.schema.indices.IndexDescriptor;
+import io.camunda.webapps.schema.descriptors.IndexDescriptor;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +24,9 @@ public interface SchemaManager {
 
   String getIndexPrefix();
 
+  /**
+   * @deprecated schema updates should only be done via the CamundaExporter onwards
+   */
   void updateSchema(Map<IndexDescriptor, Set<IndexMappingProperty>> newFields);
 
   void createIndex(IndexDescriptor testIndex);

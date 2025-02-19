@@ -8,12 +8,12 @@
 package io.camunda.optimize.service.db.os.report.interpreter.distributedby.process;
 
 import static io.camunda.optimize.dto.optimize.ReportConstants.MISSING_VARIABLE_KEY;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.AggregationDSL.filterAggregation;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.AggregationDSL.withSubaggregations;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.and;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.exists;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.matchAll;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.AggregationDSL.filterAggregation;
+import static io.camunda.optimize.service.db.os.client.dsl.AggregationDSL.withSubaggregations;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.and;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.exists;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.matchAll;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
 import static io.camunda.optimize.service.db.os.report.interpreter.util.FilterLimitedAggregationUtilOS.FILTER_LIMITED_AGGREGATION;
 import static io.camunda.optimize.service.db.os.report.service.VariableAggregationServiceOS.FILTERED_INSTANCE_COUNT_AGGREGATION;
 import static io.camunda.optimize.service.db.os.report.service.VariableAggregationServiceOS.FILTERED_VARIABLES_AGGREGATION;
@@ -55,8 +55,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
@@ -72,15 +70,24 @@ import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class ProcessDistributedByVariableInterpreterOS
     extends AbstractProcessDistributedByInterpreterOS {
+
   private static final String PARENT_FILTER_AGGREGATION = "matchAllFilter";
 
-  @Getter private final ProcessViewInterpreterFacadeOS viewInterpreter;
+  private final ProcessViewInterpreterFacadeOS viewInterpreter;
   private final DateAggregationServiceOS dateAggregationService;
   private final VariableAggregationServiceOS variableAggregationService;
+
+  public ProcessDistributedByVariableInterpreterOS(
+      final ProcessViewInterpreterFacadeOS viewInterpreter,
+      final DateAggregationServiceOS dateAggregationService,
+      final VariableAggregationServiceOS variableAggregationService) {
+    this.viewInterpreter = viewInterpreter;
+    this.dateAggregationService = dateAggregationService;
+    this.variableAggregationService = variableAggregationService;
+  }
 
   @Override
   public Set<ProcessDistributedBy> getSupportedDistributedBys() {
@@ -166,9 +173,9 @@ public class ProcessDistributedByVariableInterpreterOS
 
   @Override
   public List<DistributedByResult> retrieveResult(
-      SearchResponse<RawResult> response,
-      Map<String, Aggregate> aggregations,
-      ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
+      final SearchResponse<RawResult> response,
+      final Map<String, Aggregate> aggregations,
+      final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
     if (!aggregations.containsKey(PARENT_FILTER_AGGREGATION)) {
       // could not create aggregations, e.g. because baseline is invalid
       return Collections.emptyList();
@@ -192,9 +199,9 @@ public class ProcessDistributedByVariableInterpreterOS
         variableAggregationService.retrieveResultBucketMap(
             filteredParentAgg, bucketMap, getVariableType(context), context.getTimezone());
 
-    List<DistributedByResult> distributedByResults = new ArrayList<>();
+    final List<DistributedByResult> distributedByResults = new ArrayList<>();
 
-    for (Map.Entry<String, Map<String, Aggregate>> keyToAggregationEntry :
+    for (final Map.Entry<String, Map<String, Aggregate>> keyToAggregationEntry :
         bucketAggregations.entrySet()) {
       final CompositeCommandResult.ViewResult viewResult =
           viewInterpreter.retrieveResult(
@@ -273,7 +280,7 @@ public class ProcessDistributedByVariableInterpreterOS
   }
 
   private void addEmptyMissingDistributedByResults(
-      List<DistributedByResult> distributedByResults,
+      final List<DistributedByResult> distributedByResults,
       final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
     context.getAllDistributedByKeysAndLabels().entrySet().stream()
         .filter(
@@ -324,5 +331,9 @@ public class ProcessDistributedByVariableInterpreterOS
   private AggregateByDateUnit getDistributeByDateUnit(
       final ExecutionContext<ProcessReportDataDto, ?> context) {
     return context.getReportData().getConfiguration().getDistributeByDateVariableUnit();
+  }
+
+  public ProcessViewInterpreterFacadeOS getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }

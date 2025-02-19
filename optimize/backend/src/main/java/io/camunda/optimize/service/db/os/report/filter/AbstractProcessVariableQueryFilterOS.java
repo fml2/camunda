@@ -10,17 +10,17 @@ package io.camunda.optimize.service.db.os.report.filter;
 import static io.camunda.optimize.dto.optimize.query.report.single.filter.data.FilterOperator.NOT_CONTAINS;
 import static io.camunda.optimize.dto.optimize.query.report.single.filter.data.FilterOperator.NOT_IN;
 import static io.camunda.optimize.service.db.DatabaseConstants.MAX_GRAM;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.and;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.gt;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.gte;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.lt;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.lte;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.matchAll;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.nested;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.not;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.terms;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.wildcardQuery;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.and;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.gt;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.gte;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.lt;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.lte;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.matchAll;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.nested;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.not;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.terms;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.wildcardQuery;
 import static io.camunda.optimize.service.db.os.util.ProcessVariableHelperOS.createExcludeUndefinedOrNullQueryFilter;
 import static io.camunda.optimize.service.db.schema.index.AbstractInstanceIndex.LOWERCASE_FIELD;
 import static io.camunda.optimize.service.db.schema.index.AbstractInstanceIndex.N_GRAM_FIELD;
@@ -48,18 +48,20 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.query_dsl.BoolQuery;
 import org.opensearch.client.opensearch._types.query_dsl.ChildScoreMode;
 import org.opensearch.client.opensearch._types.query_dsl.NestedQuery;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
+import org.slf4j.Logger;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
-@Slf4j
 @Component
 public abstract class AbstractProcessVariableQueryFilterOS extends AbstractVariableQueryFilterOS {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(AbstractProcessVariableQueryFilterOS.class);
+
+  public AbstractProcessVariableQueryFilterOS() {}
 
   protected Query createFilterQuery(final VariableFilterDataDto<?> dto, final ZoneId timezone) {
     ValidationHelper.ensureNotNull("Variable filter data", dto.getData());
@@ -68,24 +70,24 @@ public abstract class AbstractProcessVariableQueryFilterOS extends AbstractVaria
 
     switch (dto.getType()) {
       case STRING -> {
-        StringVariableFilterDataDto stringVarDto = (StringVariableFilterDataDto) dto;
+        final StringVariableFilterDataDto stringVarDto = (StringVariableFilterDataDto) dto;
         query = createStringQuery(stringVarDto);
       }
       case INTEGER, DOUBLE, SHORT, LONG -> {
-        OperatorMultipleValuesVariableFilterDataDto numericVarDto =
+        final OperatorMultipleValuesVariableFilterDataDto numericVarDto =
             (OperatorMultipleValuesVariableFilterDataDto) dto;
         query = createNumericQuery(numericVarDto);
       }
       case DATE -> {
-        DateVariableFilterDataDto dateVarDto = (DateVariableFilterDataDto) dto;
+        final DateVariableFilterDataDto dateVarDto = (DateVariableFilterDataDto) dto;
         query = createDateQuery(dateVarDto, timezone);
       }
       case BOOLEAN -> {
-        BooleanVariableFilterDataDto booleanVarDto = (BooleanVariableFilterDataDto) dto;
+        final BooleanVariableFilterDataDto booleanVarDto = (BooleanVariableFilterDataDto) dto;
         query = createBooleanQuery(booleanVarDto);
       }
       default ->
-          log.warn(
+          LOG.warn(
               "Could not filter for variables! "
                   + "Type [{}] is not supported for variable filters. Ignoring filter.",
               dto.getType());
@@ -129,7 +131,7 @@ public abstract class AbstractProcessVariableQueryFilterOS extends AbstractVaria
       final String variableName, final String valueToContain) {
     final String lowerCaseValue = valueToContain.toLowerCase(Locale.ENGLISH);
     final Query filter =
-        (lowerCaseValue.length() > MAX_GRAM)
+        lowerCaseValue.length() > MAX_GRAM
             /*
               using the slow wildcard query for uncommonly large filter strings (> 10 chars)
             */
@@ -200,17 +202,17 @@ public abstract class AbstractProcessVariableQueryFilterOS extends AbstractVaria
   protected Query createNumericQuery(final OperatorMultipleValuesVariableFilterDataDto dto) {
     OperatorMultipleValuesVariableFilterDataDtoUtil.validateMultipleValuesFilterDataDto(dto);
 
-    String nestedVariableValueFieldLabel = getVariableValueFieldForType(dto.getType());
+    final String nestedVariableValueFieldLabel = getVariableValueFieldForType(dto.getType());
     final OperatorMultipleValuesFilterDataDto data = dto.getData();
 
     boolean isInOrNotIn = false;
-    List<Query> queries =
+    final List<Query> queries =
         new ArrayList<>(
             List.of(
                 term(getNestedVariableNameField(), dto.getName()),
-                term(getNestedVariableNameField(), dto.getType().getId())));
+                term(getNestedVariableTypeField(), dto.getType().getId())));
 
-    Object value = OperatorMultipleValuesVariableFilterDataDtoUtil.retrieveValue(dto);
+    final Object value = OperatorMultipleValuesVariableFilterDataDtoUtil.retrieveValue(dto);
     switch (data.getOperator()) {
       case IN, NOT_IN -> isInOrNotIn = true;
       case LESS_THAN -> queries.add(lt(nestedVariableValueFieldLabel, value));
@@ -218,13 +220,13 @@ public abstract class AbstractProcessVariableQueryFilterOS extends AbstractVaria
       case LESS_THAN_EQUALS -> queries.add(lte(nestedVariableValueFieldLabel, value));
       case GREATER_THAN_EQUALS -> queries.add(gte(nestedVariableValueFieldLabel, value));
       default ->
-          log.warn(
+          LOG.warn(
               "Could not filter for variables! Operator [{}] is not supported for type [{}]. Ignoring filter.",
               data.getOperator(),
               dto.getType());
     }
 
-    Query query =
+    final Query query =
         new NestedQuery.Builder()
             .path(VARIABLES)
             .query(and(queries.toArray(new Query[0])))
@@ -248,7 +250,7 @@ public abstract class AbstractProcessVariableQueryFilterOS extends AbstractVaria
         new BoolQuery.Builder()
             .must(term(getNestedVariableNameField(), dto.getName()))
             .must(term(getNestedVariableTypeField(), dto.getType().getId()));
-    List<Query> filterQueries =
+    final List<Query> filterQueries =
         DateFilterQueryUtilOS.filterQueries(
             List.of(dto.getData()), getVariableValueFieldForType(dto.getType()), timezone);
     if (!filterQueries.isEmpty()) {

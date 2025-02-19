@@ -20,7 +20,9 @@ const plugins: PluginOption[] = [
   {
     name: 'treat-js-files-as-jsx',
     async transform(code, id) {
-      if (!id.match(/src\/.*\.js$/)) return null;
+      if (!id.match(/src\/.*\.js$/)) {
+        return null;
+      }
 
       // Use the exposed transform from vite, instead of directly
       // transforming with esbuild
@@ -72,10 +74,10 @@ export default defineConfig(({mode}) => ({
     open: true,
     proxy: {
       '^/(api|external/api|external/static)': {
-        target: 'http://localhost:8090',
+        target: 'http://localhost:8080',
       },
       '^/': {
-        target: 'http://localhost:8090',
+        target: 'http://localhost:8080',
         bypass: (req) => {
           const path = req.url;
           if (path?.includes('/sso-callback')) {

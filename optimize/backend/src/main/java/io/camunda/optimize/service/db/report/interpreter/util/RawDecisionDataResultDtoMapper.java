@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.optimize.service.db.es.report.command.decision.mapping;
+package io.camunda.optimize.service.db.report.interpreter.util;
 
 import static java.util.stream.Collectors.toMap;
 
@@ -20,13 +20,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 
-@Slf4j
 public class RawDecisionDataResultDtoMapper {
 
   private static final List<Object> DEFAULT_OUTPUT_VARIABLE_VALUE = Collections.emptyList();
   private static final String DEFAULT_INPUT_VARIABLE_VALUE = "";
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(RawDecisionDataResultDtoMapper.class);
 
   public List<RawDataDecisionInstanceDto> mapFrom(
       final List<DecisionInstanceDto> decisionInstanceDtos,
@@ -38,7 +39,7 @@ public class RawDecisionDataResultDtoMapper {
           allInputVariables.addAll(getInputVariables(decisionInstanceDto));
           allOutputVariables.addAll(getOutputVariables(decisionInstanceDto));
 
-          RawDataDecisionInstanceDto dataEntry = convertToRawDataEntry(decisionInstanceDto);
+          final RawDataDecisionInstanceDto dataEntry = convertToRawDataEntry(decisionInstanceDto);
           rawData.add(dataEntry);
         });
 

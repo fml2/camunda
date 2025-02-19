@@ -13,6 +13,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.camunda.security.configuration.SecurityConfiguration;
 import io.camunda.zeebe.db.TransactionContext;
 import io.camunda.zeebe.db.ZeebeDb;
 import io.camunda.zeebe.db.ZeebeDbFactory;
@@ -31,6 +32,7 @@ import io.camunda.zeebe.logstreams.storage.LogStorage;
 import io.camunda.zeebe.logstreams.util.ListLogStorage;
 import io.camunda.zeebe.logstreams.util.TestLogStream;
 import io.camunda.zeebe.protocol.Protocol;
+import io.camunda.zeebe.protocol.impl.encoding.AuthInfo;
 import io.camunda.zeebe.protocol.impl.record.CopiedRecord;
 import io.camunda.zeebe.protocol.impl.record.RecordMetadata;
 import io.camunda.zeebe.protocol.impl.record.UnifiedRecordValue;
@@ -52,6 +54,10 @@ import io.camunda.zeebe.stream.impl.TypedEventRegistry;
 import io.camunda.zeebe.test.util.AutoCloseableRule;
 import io.camunda.zeebe.util.Either;
 import io.camunda.zeebe.util.FileUtil;
+import io.camunda.zeebe.util.micrometer.MicrometerUtil;
+import io.camunda.zeebe.util.micrometer.MicrometerUtil.PartitionKeyNames;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -155,17 +161,19 @@ public final class TestStreams {
       final int partitionId,
       final LogStorage logStorage,
       final Consumer<TestLogStream> logStreamConsumer) {
+    final var meterRegistry = new SimpleMeterRegistry();
     final var logStream =
         TestLogStream.builder()
             .withLogName(name)
             .withLogStorage(logStorage)
             .withPartitionId(partitionId)
             .withClock(clock)
+            .withMeterRegistry(meterRegistry)
             .build();
 
     logStreamConsumer.accept(logStream);
 
-    final LogContext logContext = LogContext.createLogContext(logStream);
+    final LogContext logContext = new LogContext(logStream, meterRegistry);
     logContextMap.put(name, logContext);
     closeables.manage(logContext);
     closeables.manage(() -> logContextMap.remove(name));
@@ -275,6 +283,13 @@ public final class TestStreams {
     final var streamProcessorListeners = new ArrayList<StreamProcessorListener>();
     streamProcessorListenerOpt.ifPresent(streamProcessorListeners::add);
 
+    final var meterRegistry = new SimpleMeterRegistry();
+    meterRegistry
+        .config()
+        .commonTags(
+            Tags.of(
+                PartitionKeyNames.PARTITION.asString(), String.valueOf(stream.getPartitionId())));
+
     final var builder =
         StreamProcessor.builder()
             .logStream(stream)
@@ -282,11 +297,14 @@ public final class TestStreams {
             .actorSchedulingService(actorScheduler)
             .commandResponseWriter(mockCommandResponseWriter)
             .listener(new StreamProcessorListenerRelay(streamProcessorListeners))
-            .recordProcessors(List.of(new Engine(wrappedFactory, new EngineConfiguration())))
+            .recordProcessors(
+                List.of(
+                    new Engine(
+                        wrappedFactory, new EngineConfiguration(), new SecurityConfiguration())))
             .streamProcessorMode(streamProcessorMode)
             .maxCommandsInBatch(maxCommandsInBatch)
             .partitionCommandSender(mock(InterPartitionCommandSender.class))
-            .meterRegistry(new SimpleMeterRegistry())
+            .meterRegistry(meterRegistry)
             .clock(StreamClock.controllable(clock));
 
     processorConfiguration.accept(builder);
@@ -310,7 +328,8 @@ public final class TestStreams {
             storage,
             snapshot,
             streamClockRef.get(),
-            processingStateRef.get());
+            processingStateRef.get(),
+            meterRegistry);
     streamContextMap.put(logName, processorContext);
     closeables.manage(processorContext);
 
@@ -333,6 +352,10 @@ public final class TestStreams {
   public void resumeProcessing(final String streamName) {
     streamContextMap.get(streamName).streamProcessor.resumeProcessing();
     LOG.info("Resume processing for stream {}", streamName);
+  }
+
+  public MeterRegistry getMeterRegistry(final String streamName) {
+    return streamContextMap.get(streamName).meterRegistry;
   }
 
   public void resetLog() {
@@ -409,7 +432,20 @@ public final class TestStreams {
     }
 
     public FluentLogWriter authorizations(final String... tenantIds) {
-      metadata.authorization(AuthorizationUtil.getAuthInfo(tenantIds));
+      return authorizations(AuthorizationUtil.getAuthInfo(tenantIds));
+    }
+
+    public FluentLogWriter usernameAuthorizations(final String username) {
+      return authorizations(AuthorizationUtil.getAuthInfo(username));
+    }
+
+    public FluentLogWriter authorizationsWithUsername(
+        final String username, final String... tenantIds) {
+      return authorizations(AuthorizationUtil.getUsernameAuthInfo(username, tenantIds));
+    }
+
+    public FluentLogWriter authorizations(final AuthInfo authorizations) {
+      metadata.authorization(authorizations);
       return this;
     }
 
@@ -463,24 +499,17 @@ public final class TestStreams {
     }
   }
 
-  private static final class LogContext implements AutoCloseable {
-    private final TestLogStream logStream;
-
-    private LogContext(final TestLogStream logStream) {
-      this.logStream = logStream;
-    }
-
-    public static LogContext createLogContext(final TestLogStream logStream) {
-      return new LogContext(logStream);
-    }
+  public record LogContext(TestLogStream logStream, MeterRegistry meterRegistry)
+      implements AutoCloseable {
 
     @Override
     public void close() {
       logStream.close();
+      MicrometerUtil.closeRegistry(meterRegistry);
     }
 
     public TestLogStream getLogStream() {
-      return logStream;
+      return logStream();
     }
 
     public LogStreamWriter newLogStreamWriter() {
@@ -495,6 +524,7 @@ public final class TestStreams {
     private final Path snapshotPath;
     private final StreamClock streamClock;
     private final MutableProcessingState processingState;
+    private final MeterRegistry meterRegistry;
     private boolean closed = false;
 
     private ProcessorContext(
@@ -503,13 +533,15 @@ public final class TestStreams {
         final Path runtimePath,
         final Path snapshotPath,
         final StreamClock streamClock,
-        final MutableProcessingState processingState) {
+        final MutableProcessingState processingState,
+        final MeterRegistry meterRegistry) {
       this.streamProcessor = streamProcessor;
       this.zeebeDb = zeebeDb;
       this.runtimePath = runtimePath;
       this.snapshotPath = snapshotPath;
       this.streamClock = streamClock;
       this.processingState = processingState;
+      this.meterRegistry = meterRegistry;
     }
 
     public static ProcessorContext createStreamContext(
@@ -518,9 +550,16 @@ public final class TestStreams {
         final Path runtimePath,
         final Path snapshotPath,
         final StreamClock streamClock,
-        final MutableProcessingState processingState) {
+        final MutableProcessingState processingState,
+        final MeterRegistry meterRegistry) {
       return new ProcessorContext(
-          streamProcessor, zeebeDb, runtimePath, snapshotPath, streamClock, processingState);
+          streamProcessor,
+          zeebeDb,
+          runtimePath,
+          snapshotPath,
+          streamClock,
+          processingState,
+          meterRegistry);
     }
 
     public void snapshot() {

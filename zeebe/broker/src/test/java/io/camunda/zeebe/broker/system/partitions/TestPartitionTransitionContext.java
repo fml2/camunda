@@ -10,6 +10,7 @@ package io.camunda.zeebe.broker.system.partitions;
 import io.atomix.cluster.messaging.ClusterCommunicationService;
 import io.atomix.raft.RaftServer.Role;
 import io.atomix.raft.partition.RaftPartition;
+import io.camunda.security.configuration.SecurityConfiguration;
 import io.camunda.zeebe.backup.api.BackupManager;
 import io.camunda.zeebe.backup.api.BackupStore;
 import io.camunda.zeebe.backup.processing.CheckpointRecordsProcessor;
@@ -44,10 +45,14 @@ import io.camunda.zeebe.stream.impl.StreamProcessor;
 import io.camunda.zeebe.transport.impl.AtomixServerTransport;
 import io.camunda.zeebe.util.health.HealthMonitor;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Collection;
 import java.util.List;
 
 public class TestPartitionTransitionContext implements PartitionTransitionContext {
+
+  private final CompositeMeterRegistry brokerMeterRegistry = new CompositeMeterRegistry();
 
   private RaftPartition raftPartition;
   private Role currentRole;
@@ -75,6 +80,15 @@ public class TestPartitionTransitionContext implements PartitionTransitionContex
   private BackupStore backupStore;
   private DynamicPartitionConfig partitionConfig;
   private ControllableStreamClock clock;
+  private SecurityConfiguration securityConfig;
+  private MeterRegistry partitionMeterRegistry;
+
+  public TestPartitionTransitionContext() {
+    partitionMeterRegistry = new SimpleMeterRegistry();
+    partitionMeterRegistry.config().commonTags("partitionId", "1");
+
+    brokerMeterRegistry.add(partitionMeterRegistry);
+  }
 
   @Override
   public int getPartitionId() {
@@ -248,6 +262,11 @@ public class TestPartitionTransitionContext implements PartitionTransitionContex
   }
 
   @Override
+  public SecurityConfiguration getSecurityConfig() {
+    return securityConfig;
+  }
+
+  @Override
   public QueryService getQueryService() {
     return queryService;
   }
@@ -309,16 +328,18 @@ public class TestPartitionTransitionContext implements PartitionTransitionContex
 
   @Override
   public MeterRegistry getBrokerMeterRegistry() {
-    return null;
+    return brokerMeterRegistry;
   }
 
   @Override
   public MeterRegistry getPartitionMeterRegistry() {
-    return null;
+    return partitionMeterRegistry;
   }
 
   @Override
-  public void setPartitionMeterRegistry(final MeterRegistry partitionMeterRegistry) {}
+  public void setPartitionMeterRegistry(final MeterRegistry partitionMeterRegistry) {
+    this.partitionMeterRegistry = partitionMeterRegistry;
+  }
 
   public void setGatewayBrokerTransport(final AtomixServerTransport gatewayBrokerTransport) {
     this.gatewayBrokerTransport = gatewayBrokerTransport;
@@ -326,6 +347,10 @@ public class TestPartitionTransitionContext implements PartitionTransitionContex
 
   public void setDiskSpaceUsageMonitor(final DiskSpaceUsageMonitor diskSpaceUsageMonitor) {
     this.diskSpaceUsageMonitor = diskSpaceUsageMonitor;
+  }
+
+  public void setBrokerCfg(final SecurityConfiguration securityConfig) {
+    this.securityConfig = securityConfig;
   }
 
   public void setBrokerCfg(final BrokerCfg brokerCfg) {

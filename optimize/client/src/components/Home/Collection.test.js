@@ -8,10 +8,8 @@
 
 import {runAllEffects} from 'react';
 import {shallow} from 'enzyme';
-import {Tag} from '@carbon/react';
 
 import {Deleter} from 'components';
-import {refreshBreadcrumbs} from 'components/navigation';
 import {loadEntity, updateEntity} from 'services';
 import {isUserSearchAvailable} from 'config';
 
@@ -20,12 +18,11 @@ import Copier from './Copier';
 import CollectionModal from './modals/CollectionModal';
 import {loadCollectionEntities} from './service';
 import UserList from './UserList';
+import {C3Page} from '@camunda/camunda-composite-components';
 
 jest.mock('config', () => ({
   isUserSearchAvailable: jest.fn().mockReturnValue(true),
 }));
-
-jest.mock('components/navigation', () => ({refreshBreadcrumbs: jest.fn()}));
 
 jest.mock('services', () => {
   const rest = jest.requireActual('services');
@@ -96,7 +93,7 @@ jest.mock('./service', () => ({
 }));
 
 const props = {
-  mightFail: jest.fn().mockImplementation((data, cb, err, final) => {
+  mightFail: jest.fn().mockImplementation((data, cb, _err, final) => {
     cb(data);
     final?.();
   }),
@@ -138,7 +135,6 @@ it('should modify the collections name with the edit modal', async () => {
   await node.find(CollectionModal).prop('onConfirm')('new Name');
 
   expect(updateEntity).toHaveBeenCalledWith('collection', 'aCollectionId', {name: 'new Name'});
-  expect(refreshBreadcrumbs).toHaveBeenCalled();
 });
 
 it('should hide edit/delete from context menu for collection items that does not have a "manager" role', () => {
@@ -170,7 +166,11 @@ it('should render content depending on the selected tab', async () => {
 it('should show the copy modal when clicking the copy button', () => {
   const node = shallow(<Collection {...props} />);
 
-  node.find('CollectionHeader').prop('onCopy')();
+  node
+    .find(C3Page)
+    .prop('header')
+    .menuItems.find(({key}) => key === 'copy')
+    .onClick();
 
   expect(node.find(Copier)).toExist();
 });
@@ -187,7 +187,7 @@ it('should set the loading state of the entity list', async () => {
   const node = shallow(
     <Collection
       {...props}
-      mightFail={async (data, cb, err, final) => {
+      mightFail={async (data, cb, _err, final) => {
         cb(await data);
         final?.();
       }}

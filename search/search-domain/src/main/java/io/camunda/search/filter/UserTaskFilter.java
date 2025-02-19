@@ -8,40 +8,58 @@
 package io.camunda.search.filter;
 
 import static io.camunda.util.CollectionUtil.addValuesToList;
+import static io.camunda.util.CollectionUtil.collectValues;
 import static io.camunda.util.CollectionUtil.collectValuesAsList;
 
+import io.camunda.util.FilterUtil;
 import io.camunda.util.ObjectBuilder;
+import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-public final record UserTaskFilter(
+public record UserTaskFilter(
     List<Long> userTaskKeys,
     List<String> elementIds,
     List<String> bpmnProcessIds,
-    List<String> assignees,
+    List<Operation<String>> assigneeOperations,
+    List<Operation<Integer>> priorityOperations,
     List<String> states,
     List<Long> processInstanceKeys,
     List<Long> processDefinitionKeys,
-    List<String> candidateUsers,
-    List<String> candidateGroups,
+    List<Operation<String>> candidateUserOperations,
+    List<Operation<String>> candidateGroupOperations,
     List<String> tenantIds,
-    List<VariableValueFilter> variableFilters,
+    List<VariableValueFilter> processInstanceVariableFilter,
+    List<VariableValueFilter> localVariableFilters,
+    List<Long> elementInstanceKeys,
+    List<Operation<OffsetDateTime>> creationDateOperations,
+    List<Operation<OffsetDateTime>> completionDateOperations,
+    List<Operation<OffsetDateTime>> followUpDateOperations,
+    List<Operation<OffsetDateTime>> dueDateOperations,
     String type)
     implements FilterBase {
 
   public static final class Builder implements ObjectBuilder<UserTaskFilter> {
+
     private List<Long> userTaskKeys;
     private List<String> elementIds;
     private List<String> bpmnProcessIds;
-    private List<String> assignees;
+    private List<Operation<String>> assigneeOperations;
+    private List<Operation<Integer>> priorityOperations;
     private List<String> states;
     private List<Long> processInstanceKeys;
     private List<Long> processDefinitionKeys;
-    private List<String> candidateUsers;
-    private List<String> candidateGroups;
+    private List<Operation<String>> candidateUserOperations;
+    private List<Operation<String>> candidateGroupOperations;
     private List<String> tenantIds;
-    private List<VariableValueFilter> variableFilters;
+    private List<VariableValueFilter> processInstanceVariableFilters;
+    private List<VariableValueFilter> localVariableFilters;
+    private List<Long> elementInstanceKeys;
+    private List<Operation<OffsetDateTime>> creationDateOperations;
+    private List<Operation<OffsetDateTime>> completionDateOperations;
+    private List<Operation<OffsetDateTime>> followUpDateOperations;
+    private List<Operation<OffsetDateTime>> dueDateOperations;
     private String type;
 
     public Builder userTaskKeys(final Long... values) {
@@ -71,13 +89,34 @@ public final record UserTaskFilter(
       return this;
     }
 
-    public Builder assignees(final String... values) {
-      return assignees((collectValuesAsList(values)));
+    public Builder assigneeOperations(final List<Operation<String>> operations) {
+      assigneeOperations = addValuesToList(assigneeOperations, operations);
+      return this;
     }
 
-    public Builder assignees(final List<String> values) {
-      assignees = addValuesToList(assignees, values);
+    public Builder assignees(final String value, final String... values) {
+      return assigneeOperations(FilterUtil.mapDefaultToOperation(value, values));
+    }
+
+    @SafeVarargs
+    public final Builder assigneeOperations(
+        final Operation<String> operation, final Operation<String>... operations) {
+      return assigneeOperations(collectValues(operation, operations));
+    }
+
+    public Builder priorityOperations(final List<Operation<Integer>> operations) {
+      priorityOperations = addValuesToList(priorityOperations, operations);
       return this;
+    }
+
+    public Builder priorities(final Integer value, final Integer... values) {
+      return priorityOperations(FilterUtil.mapDefaultToOperation(value, values));
+    }
+
+    @SafeVarargs
+    public final Builder priorityOperations(
+        final Operation<Integer> operation, final Operation<Integer>... operations) {
+      return priorityOperations(collectValues(operation, operations));
     }
 
     public Builder states(final String... values) {
@@ -107,22 +146,34 @@ public final record UserTaskFilter(
       return this;
     }
 
-    public Builder candidateUsers(final String... values) {
-      return candidateUsers(collectValuesAsList(values));
-    }
-
-    public Builder candidateUsers(final List<String> values) {
-      candidateUsers = addValuesToList(candidateUsers, values);
+    public Builder candidateUserOperations(final List<Operation<String>> operations) {
+      candidateUserOperations = addValuesToList(candidateUserOperations, operations);
       return this;
     }
 
-    public Builder candidateGroups(final String... values) {
-      return candidateGroups(collectValuesAsList(values));
+    public Builder candidateUsers(final String value, final String... values) {
+      return candidateUserOperations(FilterUtil.mapDefaultToOperation(value, values));
     }
 
-    public Builder candidateGroups(final List<String> values) {
-      candidateGroups = addValuesToList(candidateGroups, values);
+    @SafeVarargs
+    public final Builder candidateUserOperations(
+        final Operation<String> operation, final Operation<String>... operations) {
+      return candidateUserOperations(collectValues(operation, operations));
+    }
+
+    public Builder candidateGroupOperations(final List<Operation<String>> operations) {
+      candidateGroupOperations = addValuesToList(candidateGroupOperations, operations);
       return this;
+    }
+
+    public Builder candidateGroups(final String value, final String... values) {
+      return candidateGroupOperations(FilterUtil.mapDefaultToOperation(value, values));
+    }
+
+    @SafeVarargs
+    public final Builder candidateGroupOperations(
+        final Operation<String> operation, final Operation<String>... operations) {
+      return candidateGroupOperations(collectValues(operation, operations));
     }
 
     public Builder tenantIds(final String... values) {
@@ -134,9 +185,67 @@ public final record UserTaskFilter(
       return this;
     }
 
-    public Builder variable(final List<VariableValueFilter> values) {
-      variableFilters = addValuesToList(variableFilters, values);
+    public Builder processInstanceVariables(final List<VariableValueFilter> values) {
+      processInstanceVariableFilters = addValuesToList(processInstanceVariableFilters, values);
       return this;
+    }
+
+    public Builder localVariables(final List<VariableValueFilter> values) {
+      localVariableFilters = addValuesToList(localVariableFilters, values);
+      return this;
+    }
+
+    public Builder elementInstanceKeys(final Long... values) {
+      return elementInstanceKeys(collectValuesAsList(values));
+    }
+
+    public Builder elementInstanceKeys(final List<Long> values) {
+      elementInstanceKeys = addValuesToList(elementInstanceKeys, values);
+      return this;
+    }
+
+    public Builder creationDateOperations(final List<Operation<OffsetDateTime>> operations) {
+      creationDateOperations = addValuesToList(creationDateOperations, operations);
+      return this;
+    }
+
+    @SafeVarargs
+    public final Builder creationDateOperations(
+        final Operation<OffsetDateTime> operation, final Operation<OffsetDateTime>... operations) {
+      return creationDateOperations(collectValues(operation, operations));
+    }
+
+    public Builder completionDateOperations(final List<Operation<OffsetDateTime>> operations) {
+      completionDateOperations = addValuesToList(completionDateOperations, operations);
+      return this;
+    }
+
+    @SafeVarargs
+    public final Builder completionDateOperations(
+        final Operation<OffsetDateTime> operation, final Operation<OffsetDateTime>... operations) {
+      return completionDateOperations(collectValues(operation, operations));
+    }
+
+    public Builder followUpDateOperations(final List<Operation<OffsetDateTime>> operations) {
+      followUpDateOperations = addValuesToList(followUpDateOperations, operations);
+      return this;
+    }
+
+    @SafeVarargs
+    public final Builder followUpDateOperations(
+        final Operation<OffsetDateTime> operation, final Operation<OffsetDateTime>... operations) {
+      return followUpDateOperations(collectValues(operation, operations));
+    }
+
+    public Builder dueDateOperations(final List<Operation<OffsetDateTime>> operations) {
+      dueDateOperations = addValuesToList(dueDateOperations, operations);
+      return this;
+    }
+
+    @SafeVarargs
+    public final Builder dueDateOperations(
+        final Operation<OffsetDateTime> operation, final Operation<OffsetDateTime>... operations) {
+      return dueDateOperations(collectValues(operation, operations));
     }
 
     public Builder type(final String value) {
@@ -150,14 +259,21 @@ public final record UserTaskFilter(
           Objects.requireNonNullElse(userTaskKeys, Collections.emptyList()),
           Objects.requireNonNullElse(elementIds, Collections.emptyList()),
           Objects.requireNonNullElse(bpmnProcessIds, Collections.emptyList()),
-          Objects.requireNonNullElse(assignees, Collections.emptyList()),
+          Objects.requireNonNullElse(assigneeOperations, Collections.emptyList()),
+          Objects.requireNonNullElse(priorityOperations, Collections.emptyList()),
           Objects.requireNonNullElse(states, Collections.emptyList()),
           Objects.requireNonNullElse(processInstanceKeys, Collections.emptyList()),
           Objects.requireNonNullElse(processDefinitionKeys, Collections.emptyList()),
-          Objects.requireNonNullElse(candidateUsers, Collections.emptyList()),
-          Objects.requireNonNullElse(candidateGroups, Collections.emptyList()),
+          Objects.requireNonNullElse(candidateUserOperations, Collections.emptyList()),
+          Objects.requireNonNullElse(candidateGroupOperations, Collections.emptyList()),
           Objects.requireNonNullElse(tenantIds, Collections.emptyList()),
-          Objects.requireNonNullElse(variableFilters, Collections.emptyList()),
+          Objects.requireNonNullElse(processInstanceVariableFilters, Collections.emptyList()),
+          Objects.requireNonNullElse(localVariableFilters, Collections.emptyList()),
+          Objects.requireNonNullElse(elementInstanceKeys, Collections.emptyList()),
+          Objects.requireNonNullElse(creationDateOperations, Collections.emptyList()),
+          Objects.requireNonNullElse(completionDateOperations, Collections.emptyList()),
+          Objects.requireNonNullElse(followUpDateOperations, Collections.emptyList()),
+          Objects.requireNonNullElse(dueDateOperations, Collections.emptyList()),
           type);
     }
   }

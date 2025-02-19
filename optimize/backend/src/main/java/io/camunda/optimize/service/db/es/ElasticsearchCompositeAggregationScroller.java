@@ -25,11 +25,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 
-@Slf4j
 public class ElasticsearchCompositeAggregationScroller {
 
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(ElasticsearchCompositeAggregationScroller.class);
   private OptimizeElasticsearchClient esClient;
   private SearchRequest searchRequest;
   private Consumer<CompositeBucket> compositeBucketConsumer;
@@ -60,20 +61,21 @@ public class ElasticsearchCompositeAggregationScroller {
 
   private Buckets<CompositeBucket> getNextPage() {
     try {
-      SearchResponse<?> searchResponse = esClient.search(searchRequest, Object.class);
-      CompositeAggregate compositeAggregate = extractCompositeAggregationResult(searchResponse);
+      final SearchResponse<?> searchResponse = esClient.search(searchRequest, Object.class);
+      final CompositeAggregate compositeAggregate =
+          extractCompositeAggregationResult(searchResponse);
       // find aggregation and adjust after key for next invocation
       searchRequest = searchRequestProvider.apply(compositeAggregate.afterKey());
       return compositeAggregate.buckets();
-    } catch (IOException e) {
+    } catch (final IOException e) {
       final String reason =
           String.format(
               "Was not able to get next page of %s aggregation.", pathToAggregation.getLast());
-      log.error(reason, e);
+      LOG.error(reason, e);
       throw new OptimizeRuntimeException(reason, e);
-    } catch (ElasticsearchException e) {
+    } catch (final ElasticsearchException e) {
       if (isInstanceIndexNotFoundException(e)) {
-        log.info(
+        LOG.info(
             "Was not able to get next page of {} aggregation because at least one instance from {} does not exist.",
             pathToAggregation.getLast(),
             searchRequest.index());
@@ -88,7 +90,7 @@ public class ElasticsearchCompositeAggregationScroller {
     Map<String, Aggregate> aggregations = searchResponse.aggregations();
     // find aggregation response
     for (int i = 0; i < pathToAggregation.size() - 1; i++) {
-      Aggregate agg = aggregations.get(pathToAggregation.get(i));
+      final Aggregate agg = aggregations.get(pathToAggregation.get(i));
       aggregations = agg.nested().aggregations();
     }
     return aggregations.get(pathToAggregation.getLast()).composite();
@@ -129,7 +131,7 @@ public class ElasticsearchCompositeAggregationScroller {
    * @return the scroller object
    */
   public ElasticsearchCompositeAggregationScroller setPathToAggregation(
-      String... pathToAggregation) {
+      final String... pathToAggregation) {
     this.pathToAggregation = new LinkedList<>(Arrays.asList(pathToAggregation));
     return this;
   }

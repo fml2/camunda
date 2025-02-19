@@ -11,17 +11,17 @@ import static io.camunda.optimize.dto.optimize.query.report.single.filter.data.F
 import static io.camunda.optimize.dto.optimize.query.report.single.filter.data.FilterOperator.NOT_IN;
 import static io.camunda.optimize.service.db.DatabaseConstants.MAX_GRAM;
 import static io.camunda.optimize.service.db.filter.util.OperatorMultipleValuesVariableFilterDataDtoUtil.retrieveValue;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.and;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.exists;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.gt;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.gte;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.lt;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.lte;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.matchAll;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.nested;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.not;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.wildcardQuery;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.and;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.exists;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.gt;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.gte;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.lt;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.lte;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.matchAll;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.nested;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.not;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.wildcardQuery;
 import static io.camunda.optimize.service.db.schema.index.DecisionInstanceIndex.LOWERCASE_FIELD;
 import static io.camunda.optimize.service.db.schema.index.DecisionInstanceIndex.N_GRAM_FIELD;
 import static io.camunda.optimize.service.util.DecisionVariableHelper.buildWildcardQuery;
@@ -37,7 +37,7 @@ import io.camunda.optimize.dto.optimize.query.report.single.filter.data.variable
 import io.camunda.optimize.dto.optimize.query.variable.VariableType;
 import io.camunda.optimize.service.db.filter.FilterContext;
 import io.camunda.optimize.service.db.filter.util.OperatorMultipleValuesVariableFilterDataDtoUtil;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL;
+import io.camunda.optimize.service.db.os.client.dsl.QueryDSL;
 import io.camunda.optimize.service.db.os.report.filter.util.DateFilterQueryUtilOS;
 import io.camunda.optimize.service.util.DecisionVariableHelper;
 import io.camunda.optimize.service.util.ValidationHelper;
@@ -47,19 +47,19 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.query_dsl.BoolQuery;
 import org.opensearch.client.opensearch._types.query_dsl.ChildScoreMode;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@Slf4j
-@RequiredArgsConstructor
 public abstract class DecisionVariableQueryFilterOS extends AbstractVariableQueryFilterOS
     implements QueryFilterOS<VariableFilterDataDto<?>> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(DecisionVariableQueryFilterOS.class);
   protected final Logger logger = LoggerFactory.getLogger(getClass());
+
+  public DecisionVariableQueryFilterOS() {}
 
   abstract String getVariablePath();
 
@@ -77,20 +77,20 @@ public abstract class DecisionVariableQueryFilterOS extends AbstractVariableQuer
     ValidationHelper.ensureNotNull("Variable filter data", dto.getData());
     switch (dto.getType()) {
       case BOOLEAN -> {
-        BooleanVariableFilterDataDto booleanVarDto = (BooleanVariableFilterDataDto) dto;
+        final BooleanVariableFilterDataDto booleanVarDto = (BooleanVariableFilterDataDto) dto;
         return createBooleanQuery(booleanVarDto);
       }
       case STRING -> {
-        StringVariableFilterDataDto stringVarDto = (StringVariableFilterDataDto) dto;
+        final StringVariableFilterDataDto stringVarDto = (StringVariableFilterDataDto) dto;
         return createStringQuery(stringVarDto);
       }
       case INTEGER, DOUBLE, SHORT, LONG -> {
-        OperatorMultipleValuesVariableFilterDataDto numericVarDto =
+        final OperatorMultipleValuesVariableFilterDataDto numericVarDto =
             (OperatorMultipleValuesVariableFilterDataDto) dto;
         return createNumericQuery(numericVarDto);
       }
       case DATE -> {
-        DateVariableFilterDataDto dateVarDto = (DateVariableFilterDataDto) dto;
+        final DateVariableFilterDataDto dateVarDto = (DateVariableFilterDataDto) dto;
         return createDateQuery(dateVarDto, timezone);
       }
       default ->
@@ -137,7 +137,7 @@ public abstract class DecisionVariableQueryFilterOS extends AbstractVariableQuer
   protected Query createContainsGivenStringQuery(
       final String variableId, final String valueToContain) {
     final String lowerCaseValue = valueToContain.toLowerCase();
-    Query filter =
+    final Query filter =
         (lowerCaseValue.length() > MAX_GRAM)
             /*
               using the slow wildcard query for uncommonly large filter strings (> 10 chars)
@@ -180,7 +180,7 @@ public abstract class DecisionVariableQueryFilterOS extends AbstractVariableQuer
       final String variableId,
       final VariableType variableType,
       final List<A> values,
-      BiFunction<String, List<A>, Query> termsQuery) {
+      final BiFunction<String, List<A>, Query> termsQuery) {
     final BoolQuery.Builder variableFilterBuilder = new BoolQuery.Builder().minimumShouldMatch("1");
     final String nestedVariableIdFieldLabel = getVariableIdField();
     final String nestedVariableValueFieldLabel = getVariableValueFieldForType(variableType);
@@ -203,10 +203,10 @@ public abstract class DecisionVariableQueryFilterOS extends AbstractVariableQuer
   }
 
   @Override
-  protected Query createNumericQuery(OperatorMultipleValuesVariableFilterDataDto dto) {
+  protected Query createNumericQuery(final OperatorMultipleValuesVariableFilterDataDto dto) {
     OperatorMultipleValuesVariableFilterDataDtoUtil.validateMultipleValuesFilterDataDto(dto);
 
-    String nestedVariableValueFieldLabel = getVariableValueFieldForType(dto.getType());
+    final String nestedVariableValueFieldLabel = getVariableValueFieldForType(dto.getType());
     final OperatorMultipleValuesFilterDataDto data = dto.getData();
     final Query basicQuery = term(getVariableIdField(), getVariableId(dto));
 
@@ -218,10 +218,10 @@ public abstract class DecisionVariableQueryFilterOS extends AbstractVariableQuer
       return basicQuery;
     }
 
-    Function<Query, Query> nestedAnd =
+    final Function<Query, Query> nestedAnd =
         (query) -> nested(getVariablePath(), and(query, basicQuery), ChildScoreMode.None);
 
-    Object value = retrieveValue(dto);
+    final Object value = retrieveValue(dto);
     return switch (data.getOperator()) {
       case IN, NOT_IN -> createEqualsOneOrMoreValuesQuery(dto);
       case LESS_THAN -> nestedAnd.apply(lt(nestedVariableValueFieldLabel, value));
@@ -248,13 +248,13 @@ public abstract class DecisionVariableQueryFilterOS extends AbstractVariableQuer
       dateFilterBuilder.should(createExcludeUndefinedOrNullQuery(getVariableId(dto)));
     }
 
-    List<Query> rangeQueries =
+    final List<Query> rangeQueries =
         DateFilterQueryUtilOS.createRangeQueries(
             Collections.singletonList(dto.getData()),
             getVariableValueFieldForType(dto.getType()),
             timezone);
     if (!rangeQueries.isEmpty()) {
-      Query dateValueFilterQuery =
+      final Query dateValueFilterQuery =
           new BoolQuery.Builder()
               .must(term(getVariableIdField(), getVariableId(dto)))
               .must(rangeQueries)

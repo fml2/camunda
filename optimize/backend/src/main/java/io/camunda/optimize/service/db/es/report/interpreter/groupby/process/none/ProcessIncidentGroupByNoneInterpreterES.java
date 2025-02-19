@@ -31,22 +31,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class ProcessIncidentGroupByNoneInterpreterES extends AbstractProcessGroupByInterpreterES
     implements ProcessGroupByInterpreterES {
+
   private static final String NESTED_INCIDENT_AGGREGATION = "incidentAggregation";
   private static final String FILTERED_INCIDENT_AGGREGATION = "filteredIncidentAggregation";
 
-  @Getter private final ProcessViewInterpreterFacadeES viewInterpreter;
-  @Getter private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
+  private final ProcessViewInterpreterFacadeES viewInterpreter;
+  private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
   private final DefinitionService definitionService;
+
+  public ProcessIncidentGroupByNoneInterpreterES(
+      final ProcessViewInterpreterFacadeES viewInterpreter,
+      final ProcessDistributedByInterpreterFacadeES distributedByInterpreter,
+      final DefinitionService definitionService) {
+    this.viewInterpreter = viewInterpreter;
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.definitionService = definitionService;
+  }
 
   @Override
   public Set<ProcessGroupBy> getSupportedGroupBys() {
@@ -57,13 +64,13 @@ public class ProcessIncidentGroupByNoneInterpreterES extends AbstractProcessGrou
   public Map<String, Aggregation.Builder.ContainerBuilder> createAggregation(
       final BoolQuery boolQuery,
       final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
-    Aggregation.Builder.ContainerBuilder builder =
+    final Aggregation.Builder.ContainerBuilder builder =
         new Aggregation.Builder().nested(n -> n.path(INCIDENTS));
     builder.aggregations(
         FILTERED_INCIDENT_AGGREGATION,
         Aggregation.of(
             a -> {
-              Aggregation.Builder.ContainerBuilder filter =
+              final Aggregation.Builder.ContainerBuilder filter =
                   a.filter(
                       f ->
                           f.bool(
@@ -89,7 +96,7 @@ public class ProcessIncidentGroupByNoneInterpreterES extends AbstractProcessGrou
               final List<CompositeCommandResult.DistributedByResult> distributions =
                   getDistributedByInterpreter()
                       .retrieveResult(response, nestedIncidents.aggregations(), context);
-              CompositeCommandResult.GroupByResult groupByResult =
+              final CompositeCommandResult.GroupByResult groupByResult =
                   CompositeCommandResult.GroupByResult.createGroupByNone(distributions);
               compositeCommandResult.setGroup(groupByResult);
             });
@@ -105,5 +112,13 @@ public class ProcessIncidentGroupByNoneInterpreterES extends AbstractProcessGrou
       final ResponseBody<?> response) {
     return Optional.ofNullable(response.aggregations())
         .map(aggs -> aggs.get(NESTED_INCIDENT_AGGREGATION).nested());
+  }
+
+  public ProcessViewInterpreterFacadeES getViewInterpreter() {
+    return this.viewInterpreter;
+  }
+
+  public ProcessDistributedByInterpreterFacadeES getDistributedByInterpreter() {
+    return this.distributedByInterpreter;
   }
 }

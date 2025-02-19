@@ -18,6 +18,7 @@ import {
 } from '../mocks/processes.mocks';
 import {open} from 'modules/mocks/diagrams';
 import {expect} from '@playwright/test';
+import {URL_API_PATTERN} from '../constants';
 
 const baseDirectory =
   'e2e-playwright/docs-screenshots/process-instance-migration/';
@@ -36,7 +37,7 @@ test.describe('process instance migration', () => {
     migrationView,
   }) => {
     await page.route(
-      /^.*\/api.*$/i,
+      URL_API_PATTERN,
       mockProcessesResponses({
         groupedProcesses: mockGroupedProcesses.filter((process) => {
           return process.bpmnProcessId === 'orderProcess';
@@ -52,7 +53,7 @@ test.describe('process instance migration', () => {
             completed: 0,
           },
         ],
-        processXml: open('orderProcess.bpmn'),
+        processXml: open('orderProcess_v3.bpmn'),
       }),
     );
 
@@ -113,7 +114,7 @@ test.describe('process instance migration', () => {
     await commonPage.deleteArrows();
 
     await page.route(
-      /^.*\/api.*$/i,
+      URL_API_PATTERN,
       mockProcessesResponses({
         statistics: [
           {
@@ -193,7 +194,7 @@ test.describe('process instance migration', () => {
 
     await migrationView.nextButton.click();
 
-    await commonPage.addUpArrow(page.getByTestId('state-overlay'));
+    await commonPage.addUpArrow(page.getByTestId('state-overlay-active'));
     await commonPage.addUpArrow(page.getByTestId('modifications-overlay'));
 
     await page.screenshot({
@@ -203,7 +204,7 @@ test.describe('process instance migration', () => {
     await commonPage.deleteArrows();
 
     await page.route(
-      /^.*\/api.*$/i,
+      URL_API_PATTERN,
       mockProcessesResponses({
         groupedProcesses: mockGroupedProcesses.filter((process) => {
           return process.bpmnProcessId === 'orderProcess';
@@ -232,9 +233,13 @@ test.describe('process instance migration', () => {
 
     await migrationView.confirmButton.click();
 
+    await migrationView.confirmMigration();
+
     await processesPage.diagram.moveCanvasHorizontally(-200);
 
-    await expect(page.getByTestId('state-overlay')).toBeVisible();
+    await expect(
+      page.getByTestId('state-overlay-checkPayment-active'),
+    ).toBeVisible();
     await expect(page.getByText(mockMigrationOperation.id)).toHaveCount(1);
 
     await page.screenshot({

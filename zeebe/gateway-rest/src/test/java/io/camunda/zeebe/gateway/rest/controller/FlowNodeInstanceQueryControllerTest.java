@@ -8,6 +8,8 @@
 package io.camunda.zeebe.gateway.rest.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,32 +21,47 @@ import io.camunda.search.filter.FlowNodeInstanceFilter;
 import io.camunda.search.query.FlowNodeInstanceQuery;
 import io.camunda.search.query.SearchQueryResult;
 import io.camunda.search.query.SearchQueryResult.Builder;
-import io.camunda.search.security.auth.Authentication;
 import io.camunda.search.sort.FlowNodeInstanceSort;
+import io.camunda.security.auth.Authentication;
 import io.camunda.service.FlowNodeInstanceServices;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
+import io.camunda.zeebe.gateway.rest.cache.ProcessCache;
+import io.camunda.zeebe.gateway.rest.cache.ProcessCacheItem;
+import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 
-@WebMvcTest(
-    value = FlowNodeInstanceQueryController.class,
-    properties = "camunda.rest.query.enabled=true")
+@WebMvcTest(value = FlowNodeInstanceController.class)
 public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
 
   static final String EXPECTED_SEARCH_RESPONSE =
       """
           {
               "items": [
-                  {}
+                  {
+                   "flowNodeInstanceKey":"1",
+                   "processInstanceKey":"2",
+                   "processDefinitionKey":"3",
+                   "processDefinitionId":"bpmnProcessId",
+                   "startDate": "2023-05-17T00:00:00.000Z",
+                   "endDate":"2023-05-23T00:00:00.000Z",
+                   "flowNodeId":"flowNodeId",
+                   "flowNodeName":"flowNodeName",
+                   "type":"SERVICE_TASK",
+                   "state":"ACTIVE",
+                   "hasIncident":false,
+                   "tenantId":"<default>"
+                 }
               ],
               "page": {
                   "totalItems": 1,
-                  "firstSortValues": [],
+                  "firstSortValues": ["f"],
                   "lastSortValues": [
                       "v"
                   ]
@@ -60,35 +77,34 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
                       1L,
                       2L,
                       3L,
-                      "2023-05-17",
-                      "2023-05-23",
+                      OffsetDateTime.parse("2023-05-17T00:00:00Z"),
+                      OffsetDateTime.parse("2023-05-23T00:00:00Z"),
                       "flowNodeId",
-                      "processInstanceKey/flowNodeId",
+                      null,
                       FlowNodeType.SERVICE_TASK,
                       FlowNodeState.ACTIVE,
                       false,
                       null,
-                      null,
                       "bpmnProcessId",
                       "<default>")))
-          .sortValues(new Object[] {"v"})
+          .firstSortValues(new Object[] {"f"})
+          .lastSortValues(new Object[] {"v"})
           .build();
 
   static final String EXPECTED_GET_RESPONSE =
       """
                  {
-                   "flowNodeInstanceKey":23,
-                   "processInstanceKey":5,
-                   "processDefinitionKey":17,
+                   "flowNodeInstanceKey":"23",
+                   "processInstanceKey":"5",
+                   "processDefinitionKey":"17",
                    "processDefinitionId":"complexProcess",
-                   "startDate":"startDate",
-                   "endDate":"endDate",
+                   "startDate": "2023-05-17T10:10:10.000Z",
+                   "endDate":"2023-05-23T10:10:10.000Z",
                    "flowNodeId":"startEvent_1",
-                   "treePath":"5/23",
                    "type":"SERVICE_TASK",
                    "state":"ACTIVE",
-                   "incident":true,
-                   "incidentKey":1234,
+                   "hasIncident":true,
+                   "incidentKey":"1234",
                    "tenantId":"tenantId"
                  }
           """;
@@ -98,15 +114,14 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
           23L,
           5L,
           17L,
-          "startDate",
-          "endDate",
+          OffsetDateTime.parse("2023-05-17T10:10:10Z"),
+          OffsetDateTime.parse("2023-05-23T10:10:10Z"),
           "startEvent_1",
-          "5/23",
+          null,
           FlowNodeType.SERVICE_TASK,
           FlowNodeState.ACTIVE,
           true,
           1234L,
-          null,
           "complexProcess",
           "tenantId");
 
@@ -114,11 +129,18 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
   static final String FLOW_NODE_INSTANCES_SEARCH_URL = FLOW_NODE_INSTANCES_URL + "search";
 
   @MockBean FlowNodeInstanceServices flowNodeInstanceServices;
+  @MockBean ProcessCache processCache;
 
   @BeforeEach
   void setupServices() {
     when(flowNodeInstanceServices.withAuthentication(any(Authentication.class)))
         .thenReturn(flowNodeInstanceServices);
+    when(processCache.getFlowNodeName(any())).thenReturn("flowNodeName");
+    final var processCacheItem = mock(ProcessCacheItem.class);
+    when(processCacheItem.getFlowNodeName(any())).thenReturn("flowNodeName");
+    final Map<Long, ProcessCacheItem> processDefinitionMap = mock(HashMap.class);
+    when(processDefinitionMap.getOrDefault(any(), any())).thenReturn(processCacheItem);
+    when(processCache.getFlowNodeNames(any())).thenReturn(processDefinitionMap);
   }
 
   @Test
@@ -139,6 +161,7 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
         .json(EXPECTED_SEARCH_RESPONSE);
 
     verify(flowNodeInstanceServices).search(new FlowNodeInstanceQuery.Builder().build());
+    verify(processCache).getFlowNodeNames(any());
   }
 
   @Test
@@ -163,6 +186,7 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
         .json(EXPECTED_SEARCH_RESPONSE);
 
     verify(flowNodeInstanceServices).search(new FlowNodeInstanceQuery.Builder().build());
+    verify(processCache).getFlowNodeNames(any());
   }
 
   @Test
@@ -175,17 +199,16 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
         """
             {
               "filter":{
-                "flowNodeInstanceKey": 2251799813685996,
-                "processInstanceKey": 2251799813685989,
-                "processDefinitionKey": 3,
+                "flowNodeInstanceKey": "2251799813685996",
+                "processInstanceKey": "2251799813685989",
+                "processDefinitionKey": "3",
                 "processDefinitionId": "complexProcess",
                 "state": "ACTIVE",
                 "type": "SERVICE_TASK",
                 "flowNodeId": "StartEvent_1",
                 "flowNodeName": "name",
-                "treePath": "2251799813685989/2251799813685996",
-                "incident": true,
-                "incidentKey": 2251799813685320,
+                "hasIncident": true,
+                "incidentKey": "2251799813685320",
                 "tenantId": "default"
               }
             }
@@ -212,12 +235,11 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
                         .flowNodeInstanceKeys(2251799813685996L)
                         .processInstanceKeys(2251799813685989L)
                         .processDefinitionKeys(3L)
-                        .bpmnProcessIds("complexProcess")
+                        .processDefinitionIds("complexProcess")
                         .states(FlowNodeState.ACTIVE)
                         .types(FlowNodeType.SERVICE_TASK)
                         .flowNodeIds("StartEvent_1")
-                        .treePaths("2251799813685989/2251799813685996")
-                        .incident(true)
+                        .hasIncident(true)
                         .incidentKeys(2251799813685320L)
                         .tenantIds("default")
                         .build())
@@ -236,7 +258,7 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
                  { "field": "flowNodeInstanceKey", "order": "ASC" },
                  { "field": "processInstanceKey", "order": "ASC" },
                  { "field": "processDefinitionKey", "order": "ASC" },
-                 { "field": "bpmnProcessId", "order": "ASC" },
+                 { "field": "processDefinitionId", "order": "ASC" },
                  { "field": "startDate", "order": "DESC" },
                  { "field": "endDate", "order": "DESC" },
                  { "field": "flowNodeId", "order": "ASC" },
@@ -272,7 +294,7 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
                         .asc()
                         .processDefinitionKey()
                         .asc()
-                        .bpmnProcessId()
+                        .processDefinitionId()
                         .asc()
                         .startDate()
                         .desc()
@@ -290,6 +312,7 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
                         .asc()
                         .build())
                 .build());
+    verify(processCache).getFlowNodeNames(any());
   }
 
   @Test
@@ -306,9 +329,9 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
         .json(EXPECTED_GET_RESPONSE);
 
     verify(flowNodeInstanceServices).getByKey(23L);
+    verify(processCache).getFlowNodeName(any());
   }
 
-  @Disabled("Enable when RestErrorMapper handling of not found is in place.")
   @Test
   void shouldThrowNotFoundIfKeyNotExistsForGetFlowNodeInstanceByKey() {
     when(flowNodeInstanceServices.getByKey(any(Long.class))).thenThrow(new NotFoundException(""));
@@ -326,12 +349,13 @@ public class FlowNodeInstanceQueryControllerTest extends RestControllerTest {
             """
                   {
                       "type":"about:blank",
-                      "title":"Failed to execute Get Flow node instance by key.",
+                      "title":"NOT_FOUND",
                       "status":404,
                       "instance":"/v2/flownode-instances/5"
                   }
                 """);
 
     verify(flowNodeInstanceServices).getByKey(5L);
+    verify(processCache, never()).getFlowNodeName(any());
   }
 }

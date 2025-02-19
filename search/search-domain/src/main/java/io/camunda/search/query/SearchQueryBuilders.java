@@ -14,6 +14,24 @@ public final class SearchQueryBuilders {
 
   private SearchQueryBuilders() {}
 
+  public static UsageMetricsQuery.Builder usageMetricsSearchQuery() {
+    return new UsageMetricsQuery.Builder();
+  }
+
+  public static UsageMetricsQuery usageMetricsSearchQuery(
+      final Function<UsageMetricsQuery.Builder, ObjectBuilder<UsageMetricsQuery>> fn) {
+    return fn.apply(usageMetricsSearchQuery()).build();
+  }
+
+  public static ProcessDefinitionQuery.Builder processDefinitionSearchQuery() {
+    return new ProcessDefinitionQuery.Builder();
+  }
+
+  public static ProcessDefinitionQuery processDefinitionSearchQuery(
+      final Function<ProcessDefinitionQuery.Builder, ObjectBuilder<ProcessDefinitionQuery>> fn) {
+    return fn.apply(processDefinitionSearchQuery()).build();
+  }
+
   public static ProcessInstanceQuery.Builder processInstanceSearchQuery() {
     return new ProcessInstanceQuery.Builder();
   }
@@ -94,6 +112,42 @@ public final class SearchQueryBuilders {
   public static UserQuery userSearchQuery(
       final Function<UserQuery.Builder, ObjectBuilder<UserQuery>> fn) {
     return fn.apply(userSearchQuery()).build();
+  }
+
+  public static MappingQuery.Builder mappingSearchQuery() {
+    return new MappingQuery.Builder();
+  }
+
+  public static MappingQuery mappingSearchQuery(
+      final Function<MappingQuery.Builder, ObjectBuilder<MappingQuery>> fn) {
+    return fn.apply(mappingSearchQuery()).build();
+  }
+
+  public static RoleQuery.Builder roleSearchQuery() {
+    return new RoleQuery.Builder();
+  }
+
+  public static RoleQuery roleSearchQuery(
+      final Function<RoleQuery.Builder, ObjectBuilder<RoleQuery>> fn) {
+    return fn.apply(roleSearchQuery()).build();
+  }
+
+  public static TenantQuery.Builder tenantSearchQuery() {
+    return new TenantQuery.Builder();
+  }
+
+  public static TenantQuery tenantSearchQuery(
+      final Function<TenantQuery.Builder, ObjectBuilder<TenantQuery>> fn) {
+    return fn.apply(tenantSearchQuery()).build();
+  }
+
+  public static GroupQuery.Builder groupSearchQuery() {
+    return new GroupQuery.Builder();
+  }
+
+  public static GroupQuery groupSearchQuery(
+      final Function<GroupQuery.Builder, ObjectBuilder<GroupQuery>> fn) {
+    return fn.apply(groupSearchQuery()).build();
   }
 
   public static AuthorizationQuery.Builder authorizationSearchQuery() {

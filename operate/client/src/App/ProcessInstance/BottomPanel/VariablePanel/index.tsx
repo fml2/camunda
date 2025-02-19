@@ -23,10 +23,23 @@ const VariablePanel = observer(function VariablePanel() {
   const {processInstanceId = ''} = useProcessInstancePageParams();
 
   const flowNodeId = flowNodeSelectionStore.state.selection?.flowNodeId;
+  const flowNodeInstanceId =
+    flowNodeSelectionStore.state.selection?.flowNodeInstanceId;
 
-  const {fetchListeners, state, listenersFailureCount, hasFlowNodeListeners} =
-    processInstanceListenersStore;
-  const {listeners} = state;
+  const {
+    fetchListeners,
+    state,
+    listenersFailureCount,
+    hasFlowNodeListeners,
+    reset,
+  } = processInstanceListenersStore;
+  const {listeners, listenerTypeFilter} = state;
+
+  const shouldUseFlowNodeId = !flowNodeInstanceId && flowNodeId;
+
+  useEffect(() => {
+    reset();
+  }, [flowNodeId, reset]);
 
   useEffect(() => {
     variablesStore.init(processInstanceId);
@@ -37,14 +50,33 @@ const VariablePanel = observer(function VariablePanel() {
   }, [processInstanceId]);
 
   useEffect(() => {
-    if (flowNodeId) {
+    if (shouldUseFlowNodeId) {
       fetchListeners({
         fetchType: 'initial',
         processInstanceId: processInstanceId,
-        payload: {flowNodeId},
+        payload: {
+          flowNodeId,
+          ...(listenerTypeFilter && {listenerTypeFilter}),
+        },
+      });
+    } else if (flowNodeInstanceId) {
+      fetchListeners({
+        fetchType: 'initial',
+        processInstanceId: processInstanceId,
+        payload: {
+          flowNodeInstanceId,
+          ...(listenerTypeFilter && {listenerTypeFilter}),
+        },
       });
     }
-  }, [fetchListeners, processInstanceId, flowNodeId]);
+  }, [
+    fetchListeners,
+    processInstanceId,
+    flowNodeId,
+    flowNodeInstanceId,
+    shouldUseFlowNodeId,
+    listenerTypeFilter,
+  ]);
 
   return (
     <TabView
@@ -74,22 +106,22 @@ const VariablePanel = observer(function VariablePanel() {
                 content: <InputOutputMappings type="Output" />,
                 onClick: variablesStore.stopPolling,
               },
-              ...(hasFlowNodeListeners
-                ? [
-                    {
-                      id: 'listeners',
-                      testId: 'listeners-tab-button',
-                      ...(listenersFailureCount && {
-                        labelIcon: <WarningFilled />,
-                      }),
-                      label: 'Listeners',
-                      content: <Listeners listeners={listeners} />,
-                      removePadding: true,
-                      onClick: variablesStore.stopPolling,
-                    },
-                  ]
-                : []),
             ]),
+        ...(hasFlowNodeListeners
+          ? [
+              {
+                id: 'listeners',
+                testId: 'listeners-tab-button',
+                ...(listenersFailureCount && {
+                  labelIcon: <WarningFilled />,
+                }),
+                label: 'Listeners',
+                content: <Listeners listeners={listeners} />,
+                removePadding: true,
+                onClick: variablesStore.stopPolling,
+              },
+            ]
+          : []),
       ]}
       key={`tabview-has-listeners-${hasFlowNodeListeners}`}
     />

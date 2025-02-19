@@ -1,8 +1,9 @@
 /*
- * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
- * under one or more contributor license agreements. Licensed under a proprietary license.
- * See the License.txt file for more information. You may not use this file
- * except in compliance with the proprietary license.
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
  */
 
 import {useRef, useState} from 'react';
@@ -15,11 +16,11 @@ import {
   BulkDeleter,
   EmptyState,
   EntityList,
-  Icon,
   ReportTemplateModal,
   DashboardTemplateModal,
   KpiCreationModal,
 } from 'components';
+import {OptimizeDashboard} from 'icons';
 import {format} from 'dates';
 import {t} from 'translation';
 import {formatters, getEntityIcon} from 'services';
@@ -31,6 +32,7 @@ import {checkConflicts, importEntity, removeEntities} from './service';
 import {formatLink, formatSubEntities, formatType} from './formatters';
 
 import './CollectionEnitiesList.scss';
+import { getFullURL } from '../../modules/api';
 
 export default function CollectionEnitiesList({
   collection,
@@ -46,7 +48,8 @@ export default function CollectionEnitiesList({
   const [creating, setCreating] = useState(null);
   const fileInput = useRef(null);
   const {mightFail} = useErrorHandling();
-  const {1: id} = useParams();
+  const {1: rawId} = useParams();
+  const id = rawId.replace(/\/$/, '');
 
   function closeCreationModal() {
     setCreating(null);
@@ -80,7 +83,7 @@ export default function CollectionEnitiesList({
             <EmptyState
               title={t('home.emptyState.title')}
               description={t('home.emptyState.description')}
-              icon={<Icon type="dashboard-optimize" />}
+              icon={<OptimizeDashboard />}
               actions={
                 <>
                   <Button size="md" onClick={() => openCreationModal('dashboard')}>
@@ -173,9 +176,9 @@ export default function CollectionEnitiesList({
                   icon: <Save />,
                   text: t('common.export'),
                   action: () => {
-                    window.location.href = `api/export/${entityType}/json/${
+                    window.location.href = getFullURL(`api/export/${entityType}/json/${
                       entity.id
-                    }/${encodeURIComponent(formatters.formatFileName(entity.name))}.json`;
+                    }/${encodeURIComponent(formatters.formatFileName(entity.name))}.json`);
                   },
                 }
               );

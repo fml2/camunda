@@ -42,6 +42,7 @@ jobs:
             assign
             eng
             help
+            hold
             pm
             qa
 
@@ -88,6 +89,8 @@ jobs:
           issue-type: pull-request
           commands: |
             ci-problems
+            ci-disable-cache
+            ci-enable-cache
 
       - name: Update comment in case of failure
         if: failure()

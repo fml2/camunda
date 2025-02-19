@@ -25,6 +25,7 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeHeader;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebePriorityDefinition;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskHeaders;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListenerEventType;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskSchedule;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeUserTask;
@@ -67,12 +68,12 @@ public final class UserTaskTransformer implements ModelElementTransformer<UserTa
     transformModelTaskHeaders(element, userTaskProperties);
     transformBindingType(element, userTaskProperties);
     transformVersionTag(element, userTaskProperties);
-    transformTaskListeners(element, userTask);
 
     if (isZeebeUserTask) {
       transformExternalReference(element, userTaskProperties);
       transformTaskPriority(element, userTaskProperties);
       userTask.setUserTaskProperties(userTaskProperties);
+      transformTaskListeners(element, userTask, userTaskProperties);
     } else {
       final var jobWorkerProperties = new JobWorkerProperties();
       jobWorkerProperties.wrap(userTaskProperties);
@@ -293,23 +294,42 @@ public final class UserTaskTransformer implements ModelElementTransformer<UserTa
     }
   }
 
-  private void transformTaskListeners(final FlowNode element, final ExecutableUserTask userTask) {
-
+  private void transformTaskListeners(
+      final FlowNode element,
+      final ExecutableUserTask userTask,
+      final UserTaskProperties userTaskProperties) {
     Optional.ofNullable(element.getSingleExtensionElement(ZeebeTaskListeners.class))
         .map(
             listeners ->
-                listeners.getTaskListeners().stream().map(this::toTaskListenerModel).toList())
+                listeners.getTaskListeners().stream()
+                    .map(listener -> toTaskListenerModel(listener, userTaskProperties))
+                    .toList())
         .ifPresent(userTask::setTaskListeners);
   }
 
-  private TaskListener toTaskListenerModel(ZeebeTaskListener zeebeTaskListener) {
+  private TaskListener toTaskListenerModel(
+      final ZeebeTaskListener zeebeTaskListener, final UserTaskProperties userTaskProperties) {
     final TaskListener listener = new TaskListener();
-    listener.setEventType(zeebeTaskListener.getEventType());
+    final var eventType = getZeebeTaskListenerEventType(zeebeTaskListener);
+    listener.setEventType(eventType);
 
     final JobWorkerProperties jobProperties = new JobWorkerProperties();
+    jobProperties.wrap(userTaskProperties);
     jobProperties.setType(expressionLanguage.parseExpression(zeebeTaskListener.getType()));
     jobProperties.setRetries(expressionLanguage.parseExpression(zeebeTaskListener.getRetries()));
     listener.setJobWorkerProperties(jobProperties);
     return listener;
+  }
+
+  @SuppressWarnings("deprecation")
+  private static ZeebeTaskListenerEventType getZeebeTaskListenerEventType(
+      final ZeebeTaskListener zeebeTaskListener) {
+    return switch (zeebeTaskListener.getEventType()) {
+      case create, creating -> ZeebeTaskListenerEventType.creating;
+      case assignment, assigning -> ZeebeTaskListenerEventType.assigning;
+      case update, updating -> ZeebeTaskListenerEventType.updating;
+      case complete, completing -> ZeebeTaskListenerEventType.completing;
+      case cancel, canceling -> ZeebeTaskListenerEventType.canceling;
+    };
   }
 }

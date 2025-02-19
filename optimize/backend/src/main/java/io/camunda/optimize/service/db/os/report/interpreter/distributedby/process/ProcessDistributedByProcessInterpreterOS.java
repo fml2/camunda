@@ -7,8 +7,8 @@
  */
 package io.camunda.optimize.service.db.os.report.interpreter.distributedby.process;
 
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.AggregationDSL.termAggregation;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.AggregationDSL.withSubaggregations;
+import static io.camunda.optimize.service.db.os.client.dsl.AggregationDSL.termAggregation;
+import static io.camunda.optimize.service.db.os.client.dsl.AggregationDSL.withSubaggregations;
 import static io.camunda.optimize.service.db.report.plan.process.ProcessDistributedBy.PROCESS_DISTRIBUTED_BY_PROCESS;
 
 import io.camunda.optimize.dto.optimize.query.report.single.process.ProcessReportDataDto;
@@ -29,8 +29,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.opensearch.client.opensearch._types.FieldValue;
 import org.opensearch.client.opensearch._types.SortOrder;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
@@ -43,14 +41,23 @@ import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class ProcessDistributedByProcessInterpreterOS
     extends AbstractProcessDistributedByInterpreterOS
     implements ProcessDistributedByProcessInterpreter {
-  @Getter private final ProcessViewInterpreterFacadeOS viewInterpreter;
+
+  private final ProcessViewInterpreterFacadeOS viewInterpreter;
   private final ConfigurationService configurationService;
-  @Getter private final ProcessDefinitionReader processDefinitionReader;
+  private final ProcessDefinitionReader processDefinitionReader;
+
+  public ProcessDistributedByProcessInterpreterOS(
+      final ProcessViewInterpreterFacadeOS viewInterpreter,
+      final ConfigurationService configurationService,
+      final ProcessDefinitionReader processDefinitionReader) {
+    this.viewInterpreter = viewInterpreter;
+    this.configurationService = configurationService;
+    this.processDefinitionReader = processDefinitionReader;
+  }
 
   @Override
   public Set<ProcessDistributedBy> getSupportedDistributedBys() {
@@ -87,10 +94,10 @@ public class ProcessDistributedByProcessInterpreterOS
 
   @Override
   public List<DistributedByResult> retrieveResult(
-      SearchResponse<RawResult> response,
-      Map<String, Aggregate> aggregations,
-      ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
-    Map<String, List<ProcessBucket>> bucketsByDefKey =
+      final SearchResponse<RawResult> response,
+      final Map<String, Aggregate> aggregations,
+      final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
+    final Map<String, List<ProcessBucket>> bucketsByDefKey =
         extractBucketsByDefKey(response, aggregations, context);
     return retrieveResult(bucketsByDefKey, context);
   }
@@ -111,14 +118,14 @@ public class ProcessDistributedByProcessInterpreterOS
       final SearchResponse<RawResult> response,
       final Map<String, Aggregate> aggregations,
       final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
-    Map<String, List<ProcessBucket>> bucketsByDefKey = new HashMap<>();
+    final Map<String, List<ProcessBucket>> bucketsByDefKey = new HashMap<>();
     final StringTermsAggregate procDefKeyAgg = aggregations.get(PROC_DEF_KEY_AGG).sterms();
     if (procDefKeyAgg != null) {
-      for (StringTermsBucket keyBucket : procDefKeyAgg.buckets().array()) {
+      for (final StringTermsBucket keyBucket : procDefKeyAgg.buckets().array()) {
         final StringTermsAggregate procDefVersionAgg =
             keyBucket.aggregations().get(PROC_DEF_VERSION_AGG).sterms();
         if (procDefVersionAgg != null) {
-          for (StringTermsBucket versionBucket : procDefVersionAgg.buckets().array()) {
+          for (final StringTermsBucket versionBucket : procDefVersionAgg.buckets().array()) {
             final StringTermsAggregate tenantTermsAgg =
                 versionBucket.aggregations().get(TENANT_AGG).sterms();
             if (tenantTermsAgg != null) {
@@ -143,5 +150,14 @@ public class ProcessDistributedByProcessInterpreterOS
       }
     }
     return bucketsByDefKey;
+  }
+
+  public ProcessViewInterpreterFacadeOS getViewInterpreter() {
+    return this.viewInterpreter;
+  }
+
+  @Override
+  public ProcessDefinitionReader getProcessDefinitionReader() {
+    return this.processDefinitionReader;
   }
 }

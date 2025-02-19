@@ -23,6 +23,7 @@ import io.atomix.cluster.discovery.NodeDiscoveryService;
 import io.atomix.utils.NamedType;
 import io.atomix.utils.config.Configured;
 import io.atomix.utils.event.ListenerService;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -58,21 +59,6 @@ public interface GroupMembershipProtocol
       BootstrapService bootstrap, NodeDiscoveryService discovery, Member localMember);
 
   /**
-   * Joins the cluster.
-   *
-   * @param bootstrap the bootstrap service
-   * @param discovery the discovery service
-   * @param localMember the local member info
-   * @param actorSchedulerName the context value to set for actor-scheduler
-   * @return a future to be completed once the join is complete
-   */
-  CompletableFuture<Void> join(
-      BootstrapService bootstrap,
-      NodeDiscoveryService discovery,
-      Member localMember,
-      String actorSchedulerName);
-
-  /**
    * Leaves the cluster.
    *
    * @param localMember the local member info
@@ -87,8 +73,10 @@ public interface GroupMembershipProtocol
      * Creates a new instance of the protocol.
      *
      * @param config the protocol configuration
+     * @param actorSchedulerName the value for actor-scheduler to be set on MDC
      * @return the protocol instance
      */
-    GroupMembershipProtocol newProtocol(C config);
+    GroupMembershipProtocol newProtocol(
+        C config, final String actorSchedulerName, final MeterRegistry registry);
   }
 }

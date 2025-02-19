@@ -19,12 +19,13 @@ import {pages} from 'modules/routing';
 import {logger} from 'modules/utils/logger';
 import {tracking} from 'modules/tracking';
 import {useStartProcess} from 'modules/mutations/useStartProcess';
-import {Process, Task} from 'modules/types';
+import type {Process, Task} from 'modules/types';
 import {FormModal} from './FormModal';
 import {getProcessDisplayName} from 'modules/utils/getProcessDisplayName';
 import {ProcessTag} from './ProcessTag';
 import styles from './styles.module.scss';
 import cn from 'classnames';
+import {useUploadDocuments} from 'modules/mutations/useUploadDocuments';
 
 type InlineLoadingStatus = NonNullable<InlineLoadingProps['status']>;
 
@@ -91,7 +92,7 @@ const ProcessTile: React.FC<Props> = ({
   ...props
 }) => {
   const {t} = useTranslation();
-
+  const {mutateAsync: uploadDocuments} = useUploadDocuments();
   const {mutateAsync: startProcess} = useStartProcess({
     onSuccess(data) {
       tracking.track({
@@ -232,6 +233,15 @@ const ProcessTile: React.FC<Props> = ({
             navigate({
               ...location,
               pathname: '/processes',
+            });
+          }}
+          onFileUpload={async (files: Map<string, File[]>) => {
+            if (files.size === 0) {
+              return new Map();
+            }
+
+            return uploadDocuments({
+              files,
             });
           }}
           isMultiTenancyEnabled={isMultiTenancyEnabled}

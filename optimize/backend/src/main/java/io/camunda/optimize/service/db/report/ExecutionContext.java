@@ -23,10 +23,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
-import lombok.Data;
 
-@Data
 public class ExecutionContext<D extends SingleReportDataDto, P extends ExecutionPlan> {
+
   private P plan;
   private D reportData;
   private ZoneId timezone;
@@ -103,5 +102,148 @@ public class ExecutionContext<D extends SingleReportDataDto, P extends Execution
       builder.userTaskReport(((ProcessReportDataDto) definitionReportData).isUserTaskReport());
     }
     return builder.build();
+  }
+
+  public P getPlan() {
+    return this.plan;
+  }
+
+  public D getReportData() {
+    return this.reportData;
+  }
+
+  public ZoneId getTimezone() {
+    return this.timezone;
+  }
+
+  public long getUnfilteredTotalInstanceCount() {
+    return this.unfilteredTotalInstanceCount;
+  }
+
+  public Optional<PaginationDto> getPagination() {
+    return this.pagination;
+  }
+
+  public boolean isCsvExport() {
+    return this.isCsvExport;
+  }
+
+  public boolean isJsonExport() {
+    return this.isJsonExport;
+  }
+
+  public Map<String, String> getAllDistributedByKeysAndLabels() {
+    return this.allDistributedByKeysAndLabels;
+  }
+
+  public Set<String> getAllVariablesNames() {
+    return this.allVariablesNames;
+  }
+
+  public Set<String> getHiddenFlowNodeIds() {
+    return this.hiddenFlowNodeIds;
+  }
+
+  public FilterContext getFilterContext() {
+    return this.filterContext;
+  }
+
+  public boolean isMultiIndexAlias() {
+    return this.multiIndexAlias;
+  }
+
+  public void setPlan(final P plan) {
+    this.plan = plan;
+  }
+
+  public void setReportData(final D reportData) {
+    this.reportData = reportData;
+  }
+
+  public void setTimezone(final ZoneId timezone) {
+    this.timezone = timezone;
+  }
+
+  public void setUnfilteredTotalInstanceCount(final long unfilteredTotalInstanceCount) {
+    this.unfilteredTotalInstanceCount = unfilteredTotalInstanceCount;
+  }
+
+  public void setPagination(final Optional<PaginationDto> pagination) {
+    this.pagination = pagination;
+  }
+
+  public void setCsvExport(final boolean isCsvExport) {
+    this.isCsvExport = isCsvExport;
+  }
+
+  public void setJsonExport(final boolean isJsonExport) {
+    this.isJsonExport = isJsonExport;
+  }
+
+  public void setCombinedRangeMinMaxStats(final MinMaxStatDto combinedRangeMinMaxStats) {
+    this.combinedRangeMinMaxStats = combinedRangeMinMaxStats;
+  }
+
+  public void setAllDistributedByKeysAndLabels(
+      final Map<String, String> allDistributedByKeysAndLabels) {
+    this.allDistributedByKeysAndLabels = allDistributedByKeysAndLabels;
+  }
+
+  public void setAllVariablesNames(final Set<String> allVariablesNames) {
+    this.allVariablesNames = allVariablesNames;
+  }
+
+  public void setHiddenFlowNodeIds(final Set<String> hiddenFlowNodeIds) {
+    this.hiddenFlowNodeIds = hiddenFlowNodeIds;
+  }
+
+  public void setFilterContext(final FilterContext filterContext) {
+    this.filterContext = filterContext;
+  }
+
+  public void setMultiIndexAlias(final boolean multiIndexAlias) {
+    this.multiIndexAlias = multiIndexAlias;
+  }
+
+  public boolean equals(final Object o) {
+    return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+  }
+
+  protected boolean canEqual(final Object other) {
+    return other instanceof ExecutionContext;
+  }
+
+  public int hashCode() {
+    return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+  }
+
+  public String toString() {
+    return "ExecutionContext(plan="
+        + this.getPlan()
+        + ", reportData="
+        + this.getReportData()
+        + ", timezone="
+        + this.getTimezone()
+        + ", unfilteredTotalInstanceCount="
+        + this.getUnfilteredTotalInstanceCount()
+        + ", pagination="
+        + this.getPagination()
+        + ", isCsvExport="
+        + this.isCsvExport()
+        + ", isJsonExport="
+        + this.isJsonExport()
+        + ", combinedRangeMinMaxStats="
+        + this.getCombinedRangeMinMaxStats()
+        + ", allDistributedByKeysAndLabels="
+        + this.getAllDistributedByKeysAndLabels()
+        + ", allVariablesNames="
+        + this.getAllVariablesNames()
+        + ", hiddenFlowNodeIds="
+        + this.getHiddenFlowNodeIds()
+        + ", filterContext="
+        + this.getFilterContext()
+        + ", multiIndexAlias="
+        + this.isMultiIndexAlias()
+        + ")";
   }
 }

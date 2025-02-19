@@ -12,10 +12,12 @@ import static io.camunda.optimize.dto.optimize.query.report.single.configuration
 import static io.camunda.optimize.dto.optimize.query.report.single.configuration.TableColumnDto.INPUT_PREFIX;
 import static io.camunda.optimize.dto.optimize.query.report.single.configuration.TableColumnDto.OUTPUT_PREFIX;
 import static io.camunda.optimize.dto.optimize.query.report.single.configuration.TableColumnDto.VARIABLE_PREFIX;
-import static io.camunda.optimize.service.db.es.report.command.process.mapping.RawProcessDataResultDtoMapper.OBJECT_VARIABLE_VALUE_PLACEHOLDER;
+import static io.camunda.optimize.dto.optimize.query.report.single.process.result.raw.RawDataProcessInstanceDto.Fields.businessKey;
+import static io.camunda.optimize.service.db.report.interpreter.util.RawProcessDataResultDtoMapper.OBJECT_VARIABLE_VALUE_PLACEHOLDER;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
+import com.google.common.collect.ImmutableList;
 import com.opencsv.CSVWriter;
 import io.camunda.optimize.dto.optimize.FlowNodeTotalDurationDataDto;
 import io.camunda.optimize.dto.optimize.query.IdResponseDto;
@@ -26,6 +28,7 @@ import io.camunda.optimize.dto.optimize.query.report.single.decision.result.raw.
 import io.camunda.optimize.dto.optimize.query.report.single.decision.result.raw.RawDataDecisionInstanceDto;
 import io.camunda.optimize.dto.optimize.query.report.single.process.result.raw.RawDataCountDto;
 import io.camunda.optimize.dto.optimize.query.report.single.process.result.raw.RawDataProcessInstanceDto;
+import io.camunda.optimize.dto.optimize.query.report.single.process.result.raw.RawDataProcessInstanceDto.Fields;
 import io.camunda.optimize.dto.optimize.query.report.single.result.hyper.MapResultEntryDto;
 import java.beans.IntrospectionException;
 import java.beans.PropertyDescriptor;
@@ -39,13 +42,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 
-@Slf4j
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class CSVUtils {
+public final class CSVUtils {
+
+  private static final Logger LOG = org.slf4j.LoggerFactory.getLogger(CSVUtils.class);
+  private static final List<Fields> PROCESS_INSTANCE_FIELDS_TO_EXCLUDE =
+      ImmutableList.of(businessKey);
+
+  private CSVUtils() {}
 
   public static byte[] mapCsvLinesToCsvBytes(
       final List<String[]> csvStrings, final char csvDelimiter) {
@@ -62,8 +67,8 @@ public class CSVUtils {
       arrayOutputStream.flush();
       bytes = arrayOutputStream.toByteArray();
       arrayOutputStream.close();
-    } catch (Exception e) {
-      log.error("can't write CSV to buffer", e);
+    } catch (final Exception e) {
+      LOG.error("can't write CSV to buffer", e);
     }
     return bytes;
   }
@@ -99,8 +104,8 @@ public class CSVUtils {
     // header line
     result.add(allIncludedKeysInOrder.toArray(new String[0]));
     int currentPosition = 0;
-    for (RawDataProcessInstanceDto instanceDto : rawData) {
-      boolean limitNotExceeded = isLimitNotExceeded(limit, result);
+    for (final RawDataProcessInstanceDto instanceDto : rawData) {
+      final boolean limitNotExceeded = isLimitNotExceeded(limit, result);
       if ((offset == null && limitNotExceeded)
           || (isOffsetPassed(offset, currentPosition) && limitNotExceeded)) {
         final String[] dataLine = new String[allIncludedKeysInOrder.size()];
@@ -133,7 +138,7 @@ public class CSVUtils {
       final Integer offset,
       final TableColumnDto tableColumns) {
     final List<String[]> result = new ArrayList<>();
-    List<String> allVariableKeys = new ArrayList<>();
+    final List<String> allVariableKeys = new ArrayList<>();
     final List<String> allInputVariableKeys = extractAllPrefixedDecisionInputKeys(rawData);
     final List<String> allOutputVariableKeys = extractAllPrefixedDecisionOutputKeys(rawData);
     allVariableKeys.addAll(allInputVariableKeys);
@@ -149,8 +154,8 @@ public class CSVUtils {
     // header line
     result.add(allIncludedKeysInOrder.toArray(new String[0]));
     int currentPosition = 0;
-    for (RawDataDecisionInstanceDto instanceDto : rawData) {
-      boolean limitNotExceeded = isLimitNotExceeded(limit, result);
+    for (final RawDataDecisionInstanceDto instanceDto : rawData) {
+      final boolean limitNotExceeded = isLimitNotExceeded(limit, result);
       if ((offset == null && limitNotExceeded)
           || (isOffsetPassed(offset, currentPosition) && limitNotExceeded)) {
         final String[] dataLine = new String[allIncludedKeysInOrder.size()];
@@ -175,15 +180,16 @@ public class CSVUtils {
     return result;
   }
 
-  public static List<String[]> map(List<MapResultEntryDto> values, Integer limit, Integer offset) {
-    List<String[]> result = new ArrayList<>();
+  public static List<String[]> map(
+      final List<MapResultEntryDto> values, final Integer limit, final Integer offset) {
+    final List<String[]> result = new ArrayList<>();
 
     int currentPosition = 0;
-    for (MapResultEntryDto value : values) {
-      boolean limitNotExceeded = isLimitNotExceeded(limit, result);
-      boolean offsetPassed = isOffsetPassed(offset, currentPosition);
+    for (final MapResultEntryDto value : values) {
+      final boolean limitNotExceeded = isLimitNotExceeded(limit, result);
+      final boolean offsetPassed = isOffsetPassed(offset, currentPosition);
       if ((offset == null && limitNotExceeded) || (offsetPassed && limitNotExceeded)) {
-        String[] line = new String[2];
+        final String[] line = new String[2];
         line[0] = value.getLabel();
         line[1] = Optional.ofNullable(value.getValue()).map(Object::toString).orElse("");
         result.add(line);
@@ -193,7 +199,7 @@ public class CSVUtils {
     return result;
   }
 
-  public static String mapAggregationType(AggregationDto aggregationDto) {
+  public static String mapAggregationType(final AggregationDto aggregationDto) {
     switch (aggregationDto.getType()) {
       case AVERAGE:
         return "average";
@@ -218,6 +224,7 @@ public class CSVUtils {
 
   public static List<String> extractAllProcessInstanceDtoFieldKeys() {
     return Arrays.stream(RawDataProcessInstanceDto.Fields.values())
+        .filter(field -> !PROCESS_INSTANCE_FIELDS_TO_EXCLUDE.contains(field))
         .map(RawDataProcessInstanceDto.Fields::name)
         .collect(toList());
   }
@@ -227,9 +234,9 @@ public class CSVUtils {
   }
 
   private static List<String> extractAllPrefixedVariableKeys(
-      List<RawDataProcessInstanceDto> rawData) {
-    Set<String> variableKeys = new HashSet<>();
-    for (RawDataProcessInstanceDto pi : rawData) {
+      final List<RawDataProcessInstanceDto> rawData) {
+    final Set<String> variableKeys = new HashSet<>();
+    for (final RawDataProcessInstanceDto pi : rawData) {
       final Map<String, Object> variables = pi.getVariables();
       if (variables != null) {
         variables.entrySet().stream()
@@ -242,9 +249,9 @@ public class CSVUtils {
   }
 
   public static List<String> extractAllPrefixedFlowNodeKeys(
-      List<RawDataProcessInstanceDto> rawData) {
-    List<String> flowNodeKeys = new ArrayList<>();
-    for (RawDataProcessInstanceDto currentInstanceDataDto : rawData) {
+      final List<RawDataProcessInstanceDto> rawData) {
+    final List<String> flowNodeKeys = new ArrayList<>();
+    for (final RawDataProcessInstanceDto currentInstanceDataDto : rawData) {
       final Optional<Map<String, FlowNodeTotalDurationDataDto>> flowNodeDurations =
           Optional.ofNullable(currentInstanceDataDto.getFlowNodeDurations());
       flowNodeDurations.ifPresent(
@@ -267,9 +274,9 @@ public class CSVUtils {
   }
 
   private static List<String> extractAllPrefixedDecisionInputKeys(
-      List<RawDataDecisionInstanceDto> rawData) {
-    Set<String> inputKeys = new HashSet<>();
-    for (RawDataDecisionInstanceDto pi : rawData) {
+      final List<RawDataDecisionInstanceDto> rawData) {
+    final Set<String> inputKeys = new HashSet<>();
+    for (final RawDataDecisionInstanceDto pi : rawData) {
       if (pi.getInputVariables() != null) {
         inputKeys.addAll(pi.getInputVariables().keySet());
       }
@@ -278,9 +285,9 @@ public class CSVUtils {
   }
 
   private static List<String> extractAllPrefixedDecisionOutputKeys(
-      List<RawDataDecisionInstanceDto> rawData) {
-    Set<String> outputKeys = new HashSet<>();
-    for (RawDataDecisionInstanceDto di : rawData) {
+      final List<RawDataDecisionInstanceDto> rawData) {
+    final Set<String> outputKeys = new HashSet<>();
+    for (final RawDataDecisionInstanceDto di : rawData) {
       if (di.getOutputVariables() != null) {
         outputKeys.addAll(di.getOutputVariables().keySet());
       }
@@ -297,14 +304,14 @@ public class CSVUtils {
                 Optional<Object> value = Optional.empty();
                 try {
                   value = Optional.ofNullable(descriptor.getReadMethod().invoke(instanceDto));
-                } catch (Exception e) {
-                  log.error("can't read value of field", e);
+                } catch (final Exception e) {
+                  LOG.error("can't read value of field", e);
                 }
                 return value.map(Object::toString).orElse(null);
               });
-    } catch (IntrospectionException e) {
+    } catch (final IntrospectionException e) {
       // no field like that
-      log.error(
+      LOG.error(
           "Tried to access RawDataInstanceDto field that did not exist {} on class {}",
           fieldKey,
           instanceClass);
@@ -313,7 +320,7 @@ public class CSVUtils {
   }
 
   private static Optional<String> getVariableValue(
-      final RawDataProcessInstanceDto instanceDto, String variableKey) {
+      final RawDataProcessInstanceDto instanceDto, final String variableKey) {
     return Optional.ofNullable(instanceDto.getVariables())
         .map(variables -> variables.get(stripOffPrefix(variableKey, VARIABLE_PREFIX)))
         .filter(variable -> !OBJECT_VARIABLE_VALUE_PLACEHOLDER.equals(variable))
@@ -332,7 +339,7 @@ public class CSVUtils {
   }
 
   private static Optional<String> getCountValue(
-      final RawDataProcessInstanceDto instanceDto, String flowNodeKey) {
+      final RawDataProcessInstanceDto instanceDto, final String flowNodeKey) {
     if (flowNodeKey.equals(addCountPrefix(RawDataCountDto.Fields.userTasks))) {
       return Optional.of(Long.toString(instanceDto.getCounts().getUserTasks()));
     } else if (flowNodeKey.equals(addCountPrefix(RawDataCountDto.Fields.incidents))) {
@@ -364,11 +371,11 @@ public class CSVUtils {
         .map(Object::toString);
   }
 
-  private static boolean isOffsetPassed(Integer offset, int currentPosition) {
+  private static boolean isOffsetPassed(final Integer offset, final int currentPosition) {
     return offset != null && currentPosition >= offset;
   }
 
-  private static boolean isLimitNotExceeded(Integer limit, List<String[]> result) {
+  private static boolean isLimitNotExceeded(final Integer limit, final List<String[]> result) {
     return limit == null || result.size() <= limit;
   }
 }

@@ -12,13 +12,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
+import io.camunda.security.configuration.MultiTenancyConfiguration;
 import io.camunda.service.ProcessInstanceServices;
 import io.camunda.service.ProcessInstanceServices.ProcessInstanceCancelRequest;
 import io.camunda.service.ProcessInstanceServices.ProcessInstanceCreateRequest;
 import io.camunda.service.ProcessInstanceServices.ProcessInstanceMigrateRequest;
 import io.camunda.service.ProcessInstanceServices.ProcessInstanceModifyRequest;
-import io.camunda.zeebe.gateway.impl.configuration.MultiTenancyCfg;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
 import io.camunda.zeebe.protocol.impl.record.value.processinstance.ProcessInstanceCreationRecord;
 import io.camunda.zeebe.protocol.impl.record.value.processinstance.ProcessInstanceMigrationRecord;
@@ -42,10 +42,10 @@ public class ProcessInstanceControllerTest extends RestControllerTest {
   static final String EXPECTED_START_RESPONSE =
       """
           {
-             "processDefinitionKey":123,
+             "processDefinitionKey":"123",
              "processDefinitionId":"bpmnProcessId",
              "processDefinitionVersion":-1,
-             "processInstanceKey":123,
+             "processInstanceKey":"123",
              "tenantId":"tenantId"
           }""";
   static final String PROCESS_INSTANCES_START_URL = "/v2/process-instances";
@@ -58,7 +58,7 @@ public class ProcessInstanceControllerTest extends RestControllerTest {
   @Captor ArgumentCaptor<ProcessInstanceMigrateRequest> migrateRequestCaptor;
   @Captor ArgumentCaptor<ProcessInstanceModifyRequest> modifyRequestCaptor;
   @MockBean ProcessInstanceServices processInstanceServices;
-  @MockBean MultiTenancyCfg multiTenancyCfg;
+  @MockBean MultiTenancyConfiguration multiTenancyCfg;
 
   @BeforeEach
   void setupServices() {
@@ -83,7 +83,7 @@ public class ProcessInstanceControllerTest extends RestControllerTest {
     final var request =
         """
         {
-            "processDefinitionKey": 123,
+            "processDefinitionKey": "123",
             "tenantId": "tenantId"
         }""";
 
@@ -130,7 +130,7 @@ public class ProcessInstanceControllerTest extends RestControllerTest {
     final var request =
         """
             {
-                "processDefinitionKey": 123
+                "processDefinitionKey": "123"
             }""";
 
     // when / then
@@ -149,10 +149,10 @@ public class ProcessInstanceControllerTest extends RestControllerTest {
         .json(
             """
 {
-   "processDefinitionKey":123,
+   "processDefinitionKey":"123",
    "processDefinitionId":"bpmnProcessId",
    "processDefinitionVersion":-1,
-   "processInstanceKey":123,
+   "processInstanceKey":"123",
    "tenantId":"<default>"
 }""");
 

@@ -9,11 +9,12 @@ package io.camunda.optimize.service.db.os;
 
 import static io.camunda.optimize.service.db.DatabaseConstants.GB_UNIT;
 import static io.camunda.optimize.service.db.DatabaseConstants.NUMBER_OF_RETRIES_ON_CONFLICT;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.RequestDSL.getRequestBuilder;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.RequestDSL.scrollRequest;
+import static io.camunda.optimize.service.db.os.client.dsl.RequestDSL.getRequestBuilder;
+import static io.camunda.optimize.service.db.os.client.dsl.RequestDSL.scrollRequest;
 import static io.camunda.optimize.service.db.schema.index.AbstractDefinitionIndex.DATA_SOURCE;
 import static io.camunda.optimize.service.db.schema.index.AbstractDefinitionIndex.DEFINITION_DELETED;
 import static io.camunda.optimize.service.exceptions.ExceptionHelper.safe;
+import static io.camunda.optimize.service.exceptions.ExceptionHelper.safeOS;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import static java.lang.String.format;
 
@@ -21,10 +22,11 @@ import io.camunda.optimize.dto.optimize.DataImportSourceType;
 import io.camunda.optimize.dto.optimize.DefinitionOptimizeResponseDto;
 import io.camunda.optimize.dto.optimize.ImportRequestDto;
 import io.camunda.optimize.dto.optimize.datasource.DataSourceDto;
+import io.camunda.optimize.rest.exceptions.NotSupportedException;
 import io.camunda.optimize.service.db.DatabaseClient;
 import io.camunda.optimize.service.db.es.schema.TransportOptionsProvider;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL;
-import io.camunda.optimize.service.db.os.externalcode.client.sync.OpenSearchDocumentOperations;
+import io.camunda.optimize.service.db.os.client.dsl.QueryDSL;
+import io.camunda.optimize.service.db.os.client.sync.OpenSearchDocumentOperations;
 import io.camunda.optimize.service.db.schema.OptimizeIndexNameService;
 import io.camunda.optimize.service.db.schema.ScriptData;
 import io.camunda.optimize.service.exceptions.OptimizeRuntimeException;
@@ -32,8 +34,9 @@ import io.camunda.optimize.service.util.BackoffCalculator;
 import io.camunda.optimize.service.util.configuration.ConfigurationService;
 import io.camunda.optimize.service.util.configuration.DatabaseType;
 import io.camunda.optimize.upgrade.os.OpenSearchClientBuilder;
+import io.camunda.search.clients.DocumentBasedSearchClient;
 import io.camunda.search.connect.plugin.PluginRepository;
-import jakarta.ws.rs.NotSupportedException;
+import io.camunda.search.os.clients.OpensearchSearchClient;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,12 +46,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.RestClient;
 import org.opensearch.client.json.JsonData;
 import org.opensearch.client.opensearch.OpenSearchAsyncClient;
@@ -63,7 +65,6 @@ import org.opensearch.client.opensearch._types.SortOrder;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
 import org.opensearch.client.opensearch._types.query_dsl.BoolQuery;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
-import org.opensearch.client.opensearch._types.query_dsl.QueryVariant;
 import org.opensearch.client.opensearch.core.BulkRequest;
 import org.opensearch.client.opensearch.core.BulkResponse;
 import org.opensearch.client.opensearch.core.CountRequest;
@@ -98,6 +99,7 @@ import org.opensearch.client.opensearch.indices.CreateIndexRequest;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest.Builder;
 import org.opensearch.client.opensearch.indices.DeleteIndexResponse;
+import org.opensearch.client.opensearch.indices.ExistsRequest;
 import org.opensearch.client.opensearch.indices.GetAliasRequest;
 import org.opensearch.client.opensearch.indices.GetAliasResponse;
 import org.opensearch.client.opensearch.indices.GetMappingRequest;
@@ -105,24 +107,34 @@ import org.opensearch.client.opensearch.indices.GetMappingResponse;
 import org.opensearch.client.opensearch.indices.RolloverRequest;
 import org.opensearch.client.opensearch.indices.RolloverResponse;
 import org.opensearch.client.opensearch.indices.rollover.RolloverConditions;
+import org.opensearch.client.opensearch.snapshot.CreateSnapshotRequest;
+import org.opensearch.client.opensearch.snapshot.CreateSnapshotResponse;
 import org.opensearch.client.opensearch.tasks.GetTasksResponse;
 import org.opensearch.client.opensearch.tasks.ListRequest;
 import org.opensearch.client.opensearch.tasks.ListResponse;
 import org.opensearch.client.opensearch.tasks.Status;
+import org.slf4j.Logger;
 import org.springframework.context.ApplicationContext;
 
-@Slf4j
 public class OptimizeOpenSearchClient extends DatabaseClient {
 
-  @Getter private ExtendedOpenSearchClient openSearchClient;
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(OptimizeOpenSearchClient.class);
 
-  @Getter private OpenSearchAsyncClient openSearchAsyncClient;
-
-  @Getter private RichOpenSearchClient richOpenSearchClient;
-
+  private ExtendedOpenSearchClient openSearchClient;
+  private DocumentBasedSearchClient documentBasedSearchClient;
+  private OpenSearchAsyncClient openSearchAsyncClient;
+  private RichOpenSearchClient richOpenSearchClient;
   private RestClient restClient;
-
   private TransportOptionsProvider transportOptionsProvider;
+  private IndexNameServiceOS indexNameServiceOS;
+
+  public OptimizeOpenSearchClient(
+      final ExtendedOpenSearchClient openSearchClient,
+      final OpenSearchAsyncClient openSearchAsyncClient,
+      final OptimizeIndexNameService indexNameService) {
+    this(openSearchClient, openSearchAsyncClient, indexNameService, new TransportOptionsProvider());
+  }
 
   public OptimizeOpenSearchClient(
       final RestClient restClient,
@@ -137,6 +149,23 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
     richOpenSearchClient =
         new RichOpenSearchClient(openSearchClient, openSearchAsyncClient, indexNameService);
     this.restClient = restClient;
+    indexNameServiceOS = new IndexNameServiceOS(indexNameService);
+    documentBasedSearchClient = new OpensearchSearchClient(openSearchClient);
+  }
+
+  public OptimizeOpenSearchClient(
+      final ExtendedOpenSearchClient openSearchClient,
+      final OpenSearchAsyncClient openSearchAsyncClient,
+      final OptimizeIndexNameService indexNameService,
+      final TransportOptionsProvider transportOptionsProvider) {
+    this.openSearchClient = openSearchClient;
+    this.indexNameService = indexNameService;
+    this.transportOptionsProvider = transportOptionsProvider;
+    this.openSearchAsyncClient = openSearchAsyncClient;
+    richOpenSearchClient =
+        new RichOpenSearchClient(openSearchClient, openSearchAsyncClient, indexNameService);
+    indexNameServiceOS = new IndexNameServiceOS(indexNameService);
+    documentBasedSearchClient = new OpensearchSearchClient(openSearchClient);
   }
 
   public RestClient getRestClient() {
@@ -149,17 +178,6 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       // duplicate the entire logic for building the transport
       throw new NotSupportedException("RestClient is only available for testing");
     }
-  }
-
-  public OptimizeOpenSearchClient(
-      final ExtendedOpenSearchClient openSearchClient,
-      final OpenSearchAsyncClient openSearchAsyncClient,
-      final OptimizeIndexNameService indexNameService) {
-    this.openSearchClient = openSearchClient;
-    this.indexNameService = indexNameService;
-    this.openSearchAsyncClient = openSearchAsyncClient;
-    richOpenSearchClient =
-        new RichOpenSearchClient(openSearchClient, openSearchAsyncClient, indexNameService);
   }
 
   private static String getHintForErrorMsg(final boolean containsNestedDocumentLimitErrorMessage) {
@@ -200,21 +218,21 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
                       / status.total());
       return Optional.of(progress);
     } catch (final Exception e) {
-      log.error(format("Failed to compute task (ID:%s) progress!", taskResponse.task().id()), e);
+      LOG.error(format("Failed to compute task (ID:%s) progress!", taskResponse.task().id()), e);
       return Optional.empty();
     }
   }
 
   public static void validateTaskResponse(final GetTasksResponse taskResponse) {
     if (taskResponse.error() != null) {
-      log.error("An Opensearch task failed with error: {}", taskResponse.error());
+      LOG.error("An Opensearch task failed with error: {}", taskResponse.error());
       throw new OptimizeRuntimeException(taskResponse.error().toString());
     }
 
     if (taskResponse.response() != null) {
       final List<String> failures = taskResponse.response().failures();
       if (failures != null && !failures.isEmpty()) {
-        log.error("Opensearch task contains failures: {}", failures);
+        LOG.error("Opensearch task contains failures: {}", failures);
         throw new OptimizeRuntimeException(failures.toString());
       }
     }
@@ -230,18 +248,6 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
   }
 
   @Override
-  public long countWithoutPrefix(final String unprefixedIndex) {
-    final CountRequest.Builder builder = new CountRequest.Builder().index(unprefixedIndex);
-
-    try {
-      return getOpenSearchClient().count(builder.build()).count();
-    } catch (final Exception e) {
-      throw new OptimizeRuntimeException(
-          String.format("Could not determine count from index: %s", unprefixedIndex));
-    }
-  }
-
-  @Override
   public void reloadConfiguration(final ApplicationContext context) {
     close();
     final ConfigurationService configurationService = context.getBean(ConfigurationService.class);
@@ -254,6 +260,10 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
     richOpenSearchClient =
         new RichOpenSearchClient(openSearchClient, openSearchAsyncClient, indexNameService);
     indexNameService = context.getBean(OptimizeIndexNameService.class);
+    restClient = OpenSearchClientBuilder.restClient(configurationService);
+    transportOptionsProvider = new TransportOptionsProvider(configurationService);
+    indexNameServiceOS = new IndexNameServiceOS(indexNameService);
+    documentBasedSearchClient = new OpensearchSearchClient(openSearchClient);
   }
 
   public final <T> GetResponse<T> get(
@@ -268,7 +278,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final String id,
       final Class<T> responseClass,
       final String errorMessage) {
-    final var requestBuilder = getRequestBuilder(index).id(id);
+    final GetRequest.Builder requestBuilder = getRequestBuilder(index).id(id);
     return get(requestBuilder, responseClass, errorMessage);
   }
 
@@ -297,7 +307,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
   public void deleteIndexTemplateByIndexTemplateName(final String indexTemplateName) {
     final String prefixedIndexTemplateName =
         indexNameService.getOptimizeIndexAliasForIndex(indexTemplateName);
-    log.debug("Deleting index template [{}].", prefixedIndexTemplateName);
+    LOG.debug("Deleting index template [{}].", prefixedIndexTemplateName);
     try {
       getOpenSearchClient().indices().deleteTemplate(b -> b.name(prefixedIndexTemplateName));
     } catch (final IOException e) {
@@ -305,7 +315,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
           String.format("Could not delete index template [%s]!", prefixedIndexTemplateName);
       throw new OptimizeRuntimeException(errorMessage, e);
     }
-    log.debug("Successfully deleted index template [{}].", prefixedIndexTemplateName);
+    LOG.debug("Successfully deleted index template [{}].", prefixedIndexTemplateName);
   }
 
   public <A, B> UpdateResponse<A> upsert(
@@ -369,6 +379,11 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
   }
 
   @Override
+  public final boolean exists(final String indexName) throws IOException {
+    return exists(ExistsRequest.of(b -> b.index(List.of(convertToPrefixedAliasName(indexName)))));
+  }
+
+  @Override
   public boolean triggerRollover(final String indexAliasName, final int maxIndexSizeGB) {
     final RolloverRequest rolloverRequest =
         new RolloverRequest.Builder()
@@ -376,16 +391,16 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
             .conditions(new RolloverConditions.Builder().maxSize(maxIndexSizeGB + GB_UNIT).build())
             .build();
 
-    log.info("Executing rollover request on {}", indexAliasName);
+    LOG.info("Executing rollover request on {}", indexAliasName);
     try {
       final RolloverResponse rolloverResponse = rollover(rolloverRequest);
       if (rolloverResponse.rolledOver()) {
-        log.info(
+        LOG.info(
             "Index with alias {} has been rolled over. New index name: {}",
             indexAliasName,
             rolloverResponse.newIndex());
       } else {
-        log.debug(
+        LOG.debug(
             "Index with alias {} has not been rolled over. {}",
             indexAliasName,
             rolloverConditionsStatus(rolloverResponse.conditions()));
@@ -393,7 +408,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       return rolloverResponse.rolledOver();
     } catch (final Exception e) {
       final String message = "Failed to execute rollover request";
-      log.error(message, e);
+      LOG.error(message, e);
       throw new OptimizeRuntimeException(message, e);
     }
   }
@@ -401,45 +416,37 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
   @Override
   public void deleteIndex(final String indexAlias) {
     if (getRichOpenSearchClient().index().deleteIndicesWithRetries(indexAlias)) {
-      log.debug("Successfully deleted index with alias {}", indexAlias);
+      LOG.debug("Successfully deleted index with alias {}", indexAlias);
     } else {
-      log.warn("Could not delete index with alias {}", indexAlias);
+      LOG.warn("Could not delete index with alias {}", indexAlias);
     }
   }
 
   @Override
-  public void refresh(String indexPattern) {
+  public long countWithoutPrefix(final String unprefixedIndex) {
+    final CountRequest.Builder builder = new CountRequest.Builder().index(unprefixedIndex);
+
+    try {
+      return getOpenSearchClient().count(builder.build()).count();
+    } catch (final Exception e) {
+      throw new OptimizeRuntimeException(
+          String.format("Could not determine count from index: %s", unprefixedIndex));
+    }
+  }
+
+  @Override
+  public void refresh(final String indexPattern) {
     getRichOpenSearchClient().index().refresh(indexPattern);
   }
 
   @Override
-  public <T> long count(final String[] indexNames, final T query) throws IOException {
-    return count(
-        indexNames, query, "Could not execute count request for " + Arrays.toString(indexNames));
+  public List<String> getAllIndexNames() throws IOException {
+    return new ArrayList<>(getRichOpenSearchClient().index().getIndexNamesWithRetries("*"));
   }
 
-  public <R> ScrollResponse<R> scroll(final ScrollRequest scrollRequest, Class<R> entityClass)
-      throws IOException {
-    return richOpenSearchClient.doc().scroll(scrollRequest, entityClass);
-  }
-
-  public <R> Map<String, Aggregate> scrollWith(
-      final SearchResponse<R> response,
-      final Consumer<List<Hit<R>>> hitsConsumer,
-      final Class<R> clazz,
-      final int limit) {
-    return safe(
-        () ->
-            richOpenSearchClient.doc().scrollWith(null, response, hitsConsumer, null, clazz, limit),
-        e -> format("Could not scroll through entries for class [%s].", clazz.getSimpleName()),
-        log);
-  }
-
-  public <T> MgetResponse<T> mget(
-      final Class<T> responseType,
-      final String errorMessage,
-      final List<MultiGetOperation> operations) {
-    return richOpenSearchClient.doc().mget(responseType, e -> errorMessage, operations);
+  @Override
+  public List<String> addPrefixesToIndices(final String... indexes) {
+    return List.of();
   }
 
   @Override
@@ -449,7 +456,12 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
 
   @Override
   public void setDefaultRequestOptions() {
-    // TODO Do nothing, will be handled with OPT-7400
+    // Do nothing, CustomerHeaderSupplier not supported for OpenSearch (see #10086)
+  }
+
+  @Override
+  public DocumentBasedSearchClient documentBasedSearchClient() {
+    return documentBasedSearchClient;
   }
 
   @Override
@@ -478,7 +490,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final Boolean retryRequestIfNestedDocLimitReached) {
 
     if (importRequestDtos.isEmpty()) {
-      log.warn("Cannot perform bulk request with empty collection of {}.", bulkRequestName);
+      LOG.warn("Cannot perform bulk request with empty collection of {}.", bulkRequestName);
     } else {
       final List<BulkOperation> operations =
           importRequestDtos.stream().map(this::createBulkOperation).toList();
@@ -497,7 +509,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final String definitionIdField,
       final int maxPageSize,
       final String engineAlias) {
-    log.debug("Performing " + indexName + " search query!");
+    LOG.debug("Performing " + indexName + " search query!");
     final Set<String> result = new HashSet<>();
 
     final BoolQuery filterQuery = buildBasicSearchDefinitionQuery(definitionXml, engineAlias);
@@ -524,7 +536,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
     final SearchResponse<DefinitionOptimizeResponseDto> searchResponse =
         search(searchRequest, DefinitionOptimizeResponseDto.class, errorMessage);
 
-    log.debug(indexName + " search query got [{}] results", searchResponse.hits().hits());
+    LOG.debug(indexName + " search query got [{}] results", searchResponse.hits().hits());
 
     for (final Hit<DefinitionOptimizeResponseDto> hit : searchResponse.hits().hits()) {
       result.add(hit.id());
@@ -535,6 +547,68 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
   @Override
   public DatabaseType getDatabaseVendor() {
     return DatabaseType.OPENSEARCH;
+  }
+
+  @Override
+  public void deleteIndexByRawIndexNames(final String... indexNames) {
+    final String indexNamesString = Arrays.toString(indexNames);
+    LOG.debug("Deleting indices [{}].", indexNamesString);
+    dbClientSnapshotFailsafe("DeleteIndex: " + indexNamesString)
+        .get(
+            () ->
+                getOpenSearchClient()
+                    .indices()
+                    .delete(DeleteIndexRequest.of(b -> b.index(List.of(indexNames)))));
+    LOG.debug("Successfully deleted index [{}].", indexNamesString);
+  }
+
+  @Override
+  public void deleteAllIndexes() {
+    LOG.debug("Deleting all indexes.");
+    try {
+      final DeleteIndexResponse response =
+          openSearchClient.indices().delete(new Builder().index("*").build());
+      if (response.acknowledged()) {
+        LOG.debug("Successfully deleted all indexes.");
+      } else {
+        LOG.warn("There was an error deleting all indexes.");
+      }
+    } catch (final IOException e) {
+      LOG.warn("There was an error deleting all indexes.", e);
+    }
+  }
+
+  public long count(final String[] indexNames, final Query query) throws IOException {
+    return count(
+        indexNames, query, "Could not execute count request for " + Arrays.toString(indexNames));
+  }
+
+  private boolean exists(final ExistsRequest existsRequest) throws IOException {
+    return openSearchClient.indices().exists(existsRequest).value();
+  }
+
+  public <R> ScrollResponse<R> scroll(final ScrollRequest scrollRequest, final Class<R> entityClass)
+      throws IOException {
+    return richOpenSearchClient.doc().scroll(scrollRequest, entityClass);
+  }
+
+  public <R> Map<String, Aggregate> scrollWith(
+      final SearchResponse<R> response,
+      final Consumer<List<Hit<R>>> hitsConsumer,
+      final Class<R> clazz,
+      final int limit) {
+    return safe(
+        () ->
+            richOpenSearchClient.doc().scrollWith(null, response, hitsConsumer, null, clazz, limit),
+        e -> format("Could not scroll through entries for class [%s].", clazz.getSimpleName()),
+        LOG);
+  }
+
+  public <T> MgetResponse<T> mget(
+      final Class<T> responseType,
+      final String errorMessage,
+      final List<MultiGetOperation> operations) {
+    return richOpenSearchClient.doc().mget(responseType, e -> errorMessage, operations);
   }
 
   public final GetAliasResponse getAlias(final String indexNamePattern) throws IOException {
@@ -548,48 +622,10 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
     return openSearchClient.indices().getAlias(getAliasesRequest);
   }
 
-  @Override
-  public List<String> getAllIndexNames() throws IOException {
-    return new ArrayList<>(getRichOpenSearchClient().index().getIndexNamesWithRetries("*"));
-  }
-
-  public <T> long count(final String[] indexNames, final T query, final String errorMessage) {
-    if (query instanceof QueryVariant || query instanceof Query) {
-      final Query osQuery;
-      if (query instanceof final QueryVariant vettedQuery) {
-        osQuery = vettedQuery.toQuery();
-      } else {
-        osQuery = (Query) query;
-      }
-      final CountRequest.Builder countReqBuilder =
-          new CountRequest.Builder().index(List.of(indexNames)).query(osQuery);
-      return richOpenSearchClient.doc().count(countReqBuilder, e -> errorMessage).count();
-    } else {
-      // TODO this is a temporary implementation, here we are extracting the json query from the
-      // search request and performing a low-level request to OpenSearch
-      if (query instanceof co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery.Builder) {
-        final String jsonQuery = "{\"query\":" + query + "}";
-        return Arrays.stream(indexNames)
-            .mapToLong(
-                indexName -> {
-                  try {
-                    return getOpenSearchClient()
-                        .countFromJson(
-                            "GET",
-                            indexNameService.getOptimizeIndexAliasForIndex(indexName) + "/_count",
-                            jsonQuery)
-                        .count();
-                  } catch (final IOException e) {
-                    throw new RuntimeException(e);
-                  }
-                })
-            .sum();
-      } else {
-        throw new IllegalArgumentException(
-            "The count method requires a valid query object, instead got "
-                + query.getClass().getSimpleName());
-      }
-    }
+  public long count(final String[] indexNames, final Query query, final String errorMessage) {
+    final CountRequest.Builder countReqBuilder =
+        new CountRequest.Builder().index(List.of(indexNames)).query(query);
+    return richOpenSearchClient.doc().count(countReqBuilder, e -> errorMessage).count();
   }
 
   public long count(final String indexName, final String errorMessage) {
@@ -614,7 +650,6 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
     return getOpenSearchClient().tasks().list(request);
   }
 
-  // todo rename it in scope of OPT-7469
   public <T> OpenSearchDocumentOperations.AggregatedResult<Hit<T>> retrieveAllScrollResults(
       final SearchRequest.Builder requestBuilder, final Class<T> responseType) throws IOException {
     return richOpenSearchClient.doc().scrollHits(requestBuilder, responseType);
@@ -637,16 +672,22 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
     return richOpenSearchClient.doc().mget(responseType, e -> errorMessage, indexesToEntitiesId);
   }
 
-  @Override
-  public List<String> addPrefixesToIndices(String... indexes) {
-    return List.of();
-  }
-
   public <T> SearchResponse<T> search(
       final SearchRequest.Builder requestBuilder,
       final Class<T> responseType,
       final String errorMessage) {
     return richOpenSearchClient.doc().search(requestBuilder, responseType, e -> errorMessage);
+  }
+
+  public <T> SearchResponse<T> searchWithFixedAggregations(
+      final SearchRequest.Builder requestBuilder,
+      final Class<T> responseType,
+      final String errorMessage) {
+    final SearchRequest searchRequest = indexNameServiceOS.applyIndexPrefix(requestBuilder).build();
+    return safeOS(
+        () -> openSearchClient.searchWithFixedAggregations(searchRequest, responseType),
+        e -> errorMessage,
+        LOG);
   }
 
   public <T> SearchResponse<T> searchUnsafe(
@@ -667,7 +708,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
           return null;
         },
         errorMessageSupplier,
-        log);
+        LOG);
   }
 
   private BulkOperation createBulkOperation(final ImportRequestDto requestDto) {
@@ -716,7 +757,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final Boolean retryRequestIfNestedDocLimitReached,
       final String indexName) {
     if (entityCollection.isEmpty()) {
-      log.warn("Cannot perform bulk request with empty collection of {}.", importItemName);
+      LOG.warn("Cannot perform bulk request with empty collection of {}.", importItemName);
     } else {
       final List<BulkOperation> operations =
           entityCollection.stream().map(addDtoToRequestConsumer).toList();
@@ -734,7 +775,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final Function<T, BulkOperation> addDtoToRequestConsumer,
       final Boolean retryRequestIfNestedDocLimitReached) {
     if (entityCollection.isEmpty()) {
-      log.warn("Cannot perform bulk request with empty collection of {}.", importItemName);
+      LOG.warn("Cannot perform bulk request with empty collection of {}.", importItemName);
     } else {
       final List<BulkOperation> operations =
           entityCollection.stream().map(addDtoToRequestConsumer).toList();
@@ -762,43 +803,42 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final Supplier<BulkRequest.Builder> bulkReqBuilderSupplier,
       final List<BulkOperation> operations,
       final String itemName) {
-    if (!operations.isEmpty()) {
-      log.info("Executing bulk request on {} items of {}", operations.size(), itemName);
+    if (operations.isEmpty()) {
+      LOG.debug("Bulk request on {} not executed because it contains no actions.", itemName);
+      return;
+    }
 
-      final String errorMessage =
-          String.format("There were errors while performing a bulk on %s.", itemName);
-      final BulkResponse bulkResponse =
-          bulk(bulkReqBuilderSupplier.get().operations(operations), errorMessage);
-      if (bulkResponse.errors()) {
-        final Set<String> failedNestedDocLimitItemIds =
-            bulkResponse.items().stream()
-                .filter(operation -> Objects.nonNull(operation.error()))
-                .filter(operation -> operation.error().reason().contains(NESTED_DOC_LIMIT_MESSAGE))
-                .map(BulkResponseItem::id)
-                .collect(Collectors.toSet());
-        if (!failedNestedDocLimitItemIds.isEmpty()) {
-          log.warn(
-              "There were failures while performing bulk on {} due to the nested document limit being reached."
-                  + " Removing {} failed items and retrying",
-              itemName,
-              failedNestedDocLimitItemIds.size());
-          final List<BulkOperation> nonFailedOperations =
-              operations.stream()
-                  .filter(
-                      request ->
-                          !failedNestedDocLimitItemIds.contains(typeByBulkOperation(request).id()))
-                  .toList();
-          if (!nonFailedOperations.isEmpty()) {
-            doBulkRequestWithNestedDocHandling(
-                bulkReqBuilderSupplier, nonFailedOperations, itemName);
-          }
-        } else {
-          throw new OptimizeRuntimeException(
-              String.format("There were failures while performing bulk on %s.", itemName));
+    LOG.info("Executing bulk request on {} items of {}", operations.size(), itemName);
+    final String errorMessage =
+        String.format("There were errors while performing a bulk on %s.", itemName);
+    final BulkResponse bulkResponse =
+        bulk(bulkReqBuilderSupplier.get().operations(operations), errorMessage);
+    if (bulkResponse.errors()) {
+      final Set<String> failedNestedDocLimitItemIds =
+          bulkResponse.items().stream()
+              .filter(operation -> Objects.nonNull(operation.error()))
+              .filter(operation -> operation.error().reason().contains(NESTED_DOC_LIMIT_MESSAGE))
+              .map(BulkResponseItem::id)
+              .collect(Collectors.toSet());
+      if (!failedNestedDocLimitItemIds.isEmpty()) {
+        LOG.warn(
+            "There were failures while performing bulk on {} due to the nested document limit being reached."
+                + " Removing {} failed items and retrying",
+            itemName,
+            failedNestedDocLimitItemIds.size());
+        final List<BulkOperation> nonFailedOperations =
+            operations.stream()
+                .filter(
+                    request ->
+                        !failedNestedDocLimitItemIds.contains(typeByBulkOperation(request).id()))
+                .toList();
+        if (!nonFailedOperations.isEmpty()) {
+          doBulkRequestWithNestedDocHandling(bulkReqBuilderSupplier, nonFailedOperations, itemName);
         }
+      } else {
+        throw new OptimizeRuntimeException(
+            String.format("There were failures while performing bulk on %s.", itemName));
       }
-    } else {
-      log.debug("Bulk request on {} not executed because it contains no actions.", itemName);
     }
   }
 
@@ -824,7 +864,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
                 itemName, getHintForErrorMsg(isReachedNestedDocLimit)));
       }
     } else {
-      log.debug("Bulk request on {} not executed because it contains no actions.", itemName);
+      LOG.debug("Bulk request on {} not executed because it contains no actions.", itemName);
     }
   }
 
@@ -845,7 +885,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
         .build();
   }
 
-  public final RolloverResponse rollover(RolloverRequest rolloverRequest) throws IOException {
+  public final RolloverResponse rollover(final RolloverRequest rolloverRequest) throws IOException {
     return openSearchClient.indices().rollover(rolloverRequest);
   }
 
@@ -879,7 +919,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final Script updateScript,
       final Query filterQuery,
       final String... indices) {
-    log.debug("Updating {}", updateItemIdentifier);
+    LOG.debug("Updating {}", updateItemIdentifier);
     final UpdateByQueryRequest.Builder requestBuilder =
         new UpdateByQueryRequest.Builder()
             .index(applyIndexPrefixes(indices))
@@ -903,12 +943,12 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
                     .get()
                     .task(),
             errorMessage,
-            log);
+            LOG);
 
     waitUntilTaskIsFinished(taskId, updateItemIdentifier);
 
     final Status taskStatus = richOpenSearchClient.task().task(taskId).response();
-    log.debug("Updated [{}] {}.", taskStatus.updated(), updateItemIdentifier);
+    LOG.debug("Updated [{}] {}.", taskStatus.updated(), updateItemIdentifier);
     return taskStatus.updated() > 0L;
   }
 
@@ -917,7 +957,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
       final Query filterQuery,
       final boolean refresh,
       final String... indices) {
-    log.debug("Deleting {}", deleteItemIdentifier);
+    LOG.debug("Deleting {}", deleteItemIdentifier);
     final DeleteByQueryRequest.Builder requestBuilder =
         new DeleteByQueryRequest.Builder()
             .index(applyIndexPrefixes(indices))
@@ -940,42 +980,13 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
                     .get()
                     .task(),
             errorMessage,
-            log);
+            LOG);
 
     waitUntilTaskIsFinished(taskId, deleteItemIdentifier);
 
     final Status taskStatus = richOpenSearchClient.task().task(taskId).response();
-    log.debug("Deleted [{}] {}.", taskStatus.updated(), deleteItemIdentifier);
+    LOG.debug("Deleted [{}] {}.", taskStatus.updated(), deleteItemIdentifier);
     return taskStatus.updated() > 0L;
-  }
-
-  @Override
-  public void deleteIndexByRawIndexNames(final String... indexNames) {
-    final String indexNamesString = Arrays.toString(indexNames);
-    log.debug("Deleting indices [{}].", indexNamesString);
-    dbClientSnapshotFailsafe("DeleteIndex: " + indexNamesString)
-        .get(
-            () ->
-                getOpenSearchClient()
-                    .indices()
-                    .delete(DeleteIndexRequest.of(b -> b.index(List.of(indexNames)))));
-    log.debug("Successfully deleted index [{}].", indexNamesString);
-  }
-
-  @Override
-  public void deleteAllIndexes() {
-    log.debug("Deleting all indexes.");
-    try {
-      final DeleteIndexResponse response =
-          openSearchClient.indices().delete(new Builder().index("*").build());
-      if (response.acknowledged()) {
-        log.debug("Successfully deleted all indexes.");
-      } else {
-        log.warn("There was an error deleting all indexes.");
-      }
-    } catch (IOException e) {
-      log.warn("There was an error deleting all indexes.", e);
-    }
   }
 
   public void waitUntilTaskIsFinished(final String taskId, final String taskItemIdentifier) {
@@ -991,7 +1002,7 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
         if (currentProgress != progress) {
           final Status taskStatus = taskResponse.task().status();
           progress = currentProgress;
-          log.info(
+          LOG.info(
               "Progress of task (ID:{}) on {}: {}% (total: {}, updated: {}, created: {}, deleted: {}). Completed: {}",
               taskId,
               taskItemIdentifier,
@@ -1008,12 +1019,28 @@ public class OptimizeOpenSearchClient extends DatabaseClient {
           Thread.sleep(backoffCalculator.calculateSleepTime());
         }
       } catch (final InterruptedException e) {
-        log.error("Waiting for Opensearch task (ID: {}) completion was interrupted!", taskId, e);
+        LOG.error("Waiting for Opensearch task (ID: {}) completion was interrupted!", taskId, e);
         Thread.currentThread().interrupt();
       } catch (final Exception e) {
         throw new OptimizeRuntimeException(
             format("Error while trying to read Opensearch task (ID: %s) progress!", taskId), e);
       }
     }
+  }
+
+  public CompletableFuture<CreateSnapshotResponse> triggerSnapshotAsync(
+      final CreateSnapshotRequest createSnapshotRequest) {
+    return safe(
+        () -> openSearchAsyncClient.snapshot().create(createSnapshotRequest),
+        e -> "Failed to triger snapshot creation!",
+        LOG);
+  }
+
+  public ExtendedOpenSearchClient getOpenSearchClient() {
+    return openSearchClient;
+  }
+
+  public RichOpenSearchClient getRichOpenSearchClient() {
+    return richOpenSearchClient;
   }
 }

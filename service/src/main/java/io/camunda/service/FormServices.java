@@ -14,9 +14,11 @@ import io.camunda.search.exception.NotFoundException;
 import io.camunda.search.query.FormQuery;
 import io.camunda.search.query.SearchQueryBuilders;
 import io.camunda.search.query.SearchQueryResult;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
 import io.camunda.service.search.core.SearchQueryService;
+import io.camunda.service.security.SecurityContextProvider;
 import io.camunda.zeebe.broker.client.api.BrokerClient;
+import java.util.Optional;
 
 public final class FormServices extends SearchQueryService<FormServices, FormQuery, FormEntity> {
 
@@ -24,20 +26,24 @@ public final class FormServices extends SearchQueryService<FormServices, FormQue
 
   public FormServices(
       final BrokerClient brokerClient,
+      final SecurityContextProvider securityContextProvider,
       final FormSearchClient formSearchClient,
       final Authentication authentication) {
-    super(brokerClient, authentication);
+    super(brokerClient, securityContextProvider, authentication);
     this.formSearchClient = formSearchClient;
   }
 
   @Override
   public FormServices withAuthentication(final Authentication authentication) {
-    return new FormServices(brokerClient, formSearchClient, authentication);
+    return new FormServices(
+        brokerClient, securityContextProvider, formSearchClient, authentication);
   }
 
   @Override
   public SearchQueryResult<FormEntity> search(final FormQuery query) {
-    return formSearchClient.searchForms(query, authentication);
+    return formSearchClient
+        .withSecurityContext(securityContextProvider.provideSecurityContext(authentication))
+        .searchForms(query);
   }
 
   public FormEntity getByKey(final Long key) {
@@ -50,6 +56,24 @@ public final class FormServices extends SearchQueryService<FormServices, FormQue
       throw new CamundaSearchException(String.format("Found form with key %d more than once", key));
     } else {
       return result.items().stream().findFirst().orElseThrow();
+    }
+  }
+
+  public Optional<FormEntity> getLatestVersionByFormId(final String formId) {
+    final Optional<FormEntity> result =
+        search(
+                SearchQueryBuilders.formSearchQuery()
+                    .filter(f -> f.formIds(formId))
+                    .sort(s -> s.version().desc())
+                    .build())
+            .items()
+            .stream()
+            .findFirst();
+
+    if (result.isPresent()) {
+      return result;
+    } else {
+      return Optional.empty();
     }
   }
 }

@@ -6,10 +6,10 @@
  * except in compliance with the Camunda License 1.0.
  */
 
-import {Mixpanel} from 'mixpanel-browser';
+import {type Mixpanel} from 'mixpanel-browser';
 import {getStage} from 'modules/utils/getStage';
-import {CurrentUser} from 'modules/types';
-import {TaskFilters} from 'modules/hooks/useTaskFilters';
+import type {CurrentUser} from 'modules/types';
+import type {TaskFilters} from 'modules/hooks/useTaskFilters';
 
 const EVENT_PREFIX = 'tasklist:';
 type Events =
@@ -17,6 +17,12 @@ type Events =
       eventName:
         | 'task-unassigned'
         | 'task-assigned'
+        | 'task-assignment-delayed-notification'
+        | 'task-unassignment-delayed-notification'
+        | 'task-completion-delayed-notification'
+        | 'task-assignment-rejected-notification'
+        | 'task-unassignment-rejected-notification'
+        | 'task-completion-rejected-notification'
         | 'processes-consent-refused'
         | 'processes-consent-accepted'
         | 'processes-fetch-failed'
@@ -35,7 +41,8 @@ type Events =
         | 'custom-filter-saved'
         | 'custom-filter-applied'
         | 'custom-filter-updated'
-        | 'custom-filter-deleted';
+        | 'custom-filter-deleted'
+        | 'public-start-form-schema-with-file-components';
     }
   | {
       eventName: 'task-opened';

@@ -16,34 +16,14 @@
 package io.camunda.process.test.impl.proxy;
 
 import io.camunda.zeebe.client.ZeebeClient;
-import java.lang.reflect.Method;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Dynamic proxy to delegate to a {@link ZeebeClient} which allows to swap the ZeebeClient object
  * under the hood.
  */
-public class ZeebeClientProxy extends AbstractInvocationHandler {
-
-  private ZeebeClient delegate;
-
-  public void setZeebeClient(final ZeebeClient zeebeClient) {
-    delegate = zeebeClient;
-  }
-
-  public void removeZeebeClient() {
-    delegate = null;
-  }
-
+public class ZeebeClientProxy extends AbstractClientProxy<ZeebeClient> {
   @Override
-  protected Object handleInvocation(
-      final Object proxy, final Method method, @Nullable final Object[] args) throws Throwable {
-    if (delegate == null) {
-      throw new RuntimeException(
-          "Cannot invoke "
-              + method
-              + " on ZeebeClient, as ZeebeClient is currently not initialized. Maybe you run outside of a testcase?");
-    }
-    return method.invoke(delegate, args);
+  protected Class<ZeebeClient> getDelegateClass() {
+    return ZeebeClient.class;
   }
 }

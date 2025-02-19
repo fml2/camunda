@@ -18,9 +18,9 @@ import java.util.List;
 import java.util.Objects;
 
 public record IncidentFilter(
-    List<Long> keys,
+    List<Long> incidentKeys,
     List<Long> processDefinitionKeys,
-    List<String> bpmnProcessIds,
+    List<String> processDefinitionIds,
     List<Long> processInstanceKeys,
     List<ErrorType> errorTypes,
     List<String> errorMessages,
@@ -29,15 +29,14 @@ public record IncidentFilter(
     DateValueFilter creationTime,
     List<IncidentState> states,
     List<Long> jobKeys,
-    List<String> treePaths,
     List<String> tenantIds)
     implements FilterBase {
 
   public static final class Builder implements ObjectBuilder<IncidentFilter> {
 
-    private List<Long> keys;
+    private List<Long> incidentKeys;
     private List<Long> processDefinitionKeys;
-    private List<String> bpmnProcessIds;
+    private List<String> processDefinitionIds;
     private List<Long> processInstanceKeys;
     private List<ErrorType> errorTypes;
     private List<String> errorMessages;
@@ -46,15 +45,14 @@ public record IncidentFilter(
     private DateValueFilter creationTimeFilter;
     private List<IncidentState> states;
     private List<Long> jobKeys;
-    private List<String> treePaths;
     private List<String> tenantIds;
 
-    public Builder keys(final Long value, final Long... values) {
-      return keys(collectValues(value, values));
+    public Builder incidentKeys(final Long value, final Long... values) {
+      return incidentKeys(collectValues(value, values));
     }
 
-    public Builder keys(final List<Long> values) {
-      keys = addValuesToList(keys, values);
+    public Builder incidentKeys(final List<Long> values) {
+      incidentKeys = addValuesToList(incidentKeys, values);
       return this;
     }
 
@@ -67,12 +65,12 @@ public record IncidentFilter(
       return this;
     }
 
-    public Builder bpmnProcessIds(final String value, final String... values) {
-      return bpmnProcessIds(collectValues(value, values));
+    public Builder processDefinitionIds(final String value, final String... values) {
+      return processDefinitionIds(collectValues(value, values));
     }
 
-    public Builder bpmnProcessIds(final List<String> values) {
-      bpmnProcessIds = addValuesToList(bpmnProcessIds, values);
+    public Builder processDefinitionIds(final List<String> values) {
+      processDefinitionIds = addValuesToList(processDefinitionIds, values);
       return this;
     }
 
@@ -144,15 +142,6 @@ public record IncidentFilter(
       return this;
     }
 
-    public Builder treePaths(final String value, final String... values) {
-      return treePaths(collectValues(value, values));
-    }
-
-    public Builder treePaths(final List<String> values) {
-      treePaths = addValuesToList(treePaths, values);
-      return this;
-    }
-
     public Builder tenantIds(final String value, final String... values) {
       return tenantIds(collectValues(value, values));
     }
@@ -165,9 +154,9 @@ public record IncidentFilter(
     @Override
     public IncidentFilter build() {
       return new IncidentFilter(
-          Objects.requireNonNullElse(keys, Collections.emptyList()),
+          Objects.requireNonNullElse(incidentKeys, Collections.emptyList()),
           Objects.requireNonNullElse(processDefinitionKeys, Collections.emptyList()),
-          Objects.requireNonNullElse(bpmnProcessIds, Collections.emptyList()),
+          Objects.requireNonNullElse(processDefinitionIds, Collections.emptyList()),
           Objects.requireNonNullElse(processInstanceKeys, Collections.emptyList()),
           Objects.requireNonNullElse(errorTypes, Collections.emptyList()),
           Objects.requireNonNullElse(errorMessages, Collections.emptyList()),
@@ -176,7 +165,6 @@ public record IncidentFilter(
           creationTimeFilter,
           Objects.requireNonNullElse(states, Collections.emptyList()),
           Objects.requireNonNullElse(jobKeys, Collections.emptyList()),
-          Objects.requireNonNullElse(treePaths, Collections.emptyList()),
           Objects.requireNonNullElse(tenantIds, Collections.emptyList()));
     }
   }

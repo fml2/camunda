@@ -29,21 +29,29 @@ import io.camunda.optimize.service.util.configuration.ConfigurationService;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
 public class SingleReportEvaluator {
+
   private final ConfigurationService configurationService;
   private final ExecutionPlanExtractor executionPlanExtractor;
   private final ExecutionPlanInterpreterFacade interpreter;
+
+  public SingleReportEvaluator(
+      final ConfigurationService configurationService,
+      final ExecutionPlanExtractor executionPlanExtractor,
+      final ExecutionPlanInterpreterFacade interpreter) {
+    this.configurationService = configurationService;
+    this.executionPlanExtractor = executionPlanExtractor;
+    this.interpreter = interpreter;
+  }
 
   @SuppressWarnings(UNCHECKED_CAST)
   public <D extends SingleReportDataDto> SingleReportEvaluationResult<Object> evaluate(
       final ReportEvaluationContext<? extends SingleReportDefinitionDto<D>> reportEvaluationContext)
       throws OptimizeException {
-    List<CommandEvaluationResult<Object>> results =
+    final List<CommandEvaluationResult<Object>> results =
         extractExecutionPlansWithValidation(reportEvaluationContext)
             .map(
                 plan ->
@@ -108,7 +116,7 @@ public class SingleReportEvaluator {
     }
     final PaginationDto pagData =
         reportEvaluationContext.getPagination().orElse(new PaginationDto());
-    if (pagData instanceof PaginationScrollableDto paginationFromRequest) {
+    if (pagData instanceof final PaginationScrollableDto paginationFromRequest) {
       scrollId = paginationFromRequest.getScrollId(); // Could be null, but it's ok
       scrollTimeout =
           Optional.of(paginationFromRequest)

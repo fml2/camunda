@@ -13,17 +13,19 @@ import io.camunda.optimize.dto.optimize.query.report.single.filter.data.variable
 import io.camunda.optimize.service.db.filter.FilterContext;
 import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCondition;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
-@Slf4j
 @Component
 @Conditional(ElasticSearchCondition.class)
 public class ProcessMultiVariableQueryFilterES extends AbstractProcessVariableQueryFilterES
     implements QueryFilterES<MultipleVariableFilterDataDto> {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(ProcessMultiVariableQueryFilterES.class);
+
+  public ProcessMultiVariableQueryFilterES() {}
 
   @Override
   public void addFilters(
@@ -43,7 +45,7 @@ public class ProcessMultiVariableQueryFilterES extends AbstractProcessVariableQu
   private Query.Builder buildMultiVariableFilterQuery(
       final MultipleVariableFilterDataDto multipleVariableFilter,
       final FilterContext filterContext) {
-    Query.Builder variableFilterBuilder = new Query.Builder();
+    final Query.Builder variableFilterBuilder = new Query.Builder();
 
     variableFilterBuilder.bool(
         b -> {

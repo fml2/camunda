@@ -15,6 +15,11 @@
  */
 package io.camunda.zeebe.client.api.search.response;
 
+/**
+ * @deprecated since 8.8 for removal in 8.9, replaced by {@link
+ *     io.camunda.client.api.search.response.FlowNodeInstance}
+ */
+@Deprecated
 public interface FlowNodeInstance {
 
   /** key */
@@ -28,6 +33,9 @@ public interface FlowNodeInstance {
 
   /** flow node id for flow node instance */
   String getFlowNodeId();
+
+  /** flow node name for flow node instance */
+  String getFlowNodeName();
 
   /** start date of flow node instance */
   String getStartDate();

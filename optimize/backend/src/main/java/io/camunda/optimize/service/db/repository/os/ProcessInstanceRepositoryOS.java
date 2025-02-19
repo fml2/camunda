@@ -11,12 +11,12 @@ import static io.camunda.optimize.dto.optimize.DefinitionType.PROCESS;
 import static io.camunda.optimize.dto.optimize.ProcessInstanceConstants.ACTIVE_STATE;
 import static io.camunda.optimize.dto.optimize.ProcessInstanceConstants.SUSPENDED_STATE;
 import static io.camunda.optimize.service.db.DatabaseConstants.MAX_RESPONSE_SIZE_LIMIT;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.and;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.exists;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.json;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.lt;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.nested;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.sourceInclude;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.and;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.exists;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.json;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.lt;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.nested;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.sourceInclude;
 import static io.camunda.optimize.service.db.os.writer.OpenSearchWriterUtil.createDefaultScriptWithPrimitiveParams;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.END_DATE;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.PROCESS_INSTANCE_ID;
@@ -45,8 +45,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.json.JsonData;
 import org.opensearch.client.opensearch._types.OpenSearchException;
 import org.opensearch.client.opensearch._types.Script;
@@ -57,21 +55,36 @@ import org.opensearch.client.opensearch.core.ScrollResponse;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
 import org.opensearch.client.opensearch.core.bulk.BulkOperation;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 class ProcessInstanceRepositoryOS implements ProcessInstanceRepository {
+
   public static final String INDEX_NOT_FOUND_ERROR_MESSAGE_KEYWORD = "index_not_found_exception";
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(ProcessInstanceRepositoryOS.class);
   private final ConfigurationService configurationService;
   private final OptimizeIndexNameService indexNameService;
   private final OptimizeOpenSearchClient osClient;
   private final ObjectMapper objectMapper;
   private final DateTimeFormatter dateTimeFormatter;
+
+  public ProcessInstanceRepositoryOS(
+      final ConfigurationService configurationService,
+      final OptimizeIndexNameService indexNameService,
+      final OptimizeOpenSearchClient osClient,
+      final ObjectMapper objectMapper,
+      final DateTimeFormatter dateTimeFormatter) {
+    this.configurationService = configurationService;
+    this.indexNameService = indexNameService;
+    this.osClient = osClient;
+    this.objectMapper = objectMapper;
+    this.dateTimeFormatter = dateTimeFormatter;
+  }
 
   @Override
   public void deleteByIds(
@@ -129,6 +142,7 @@ class ProcessInstanceRepositoryOS implements ProcessInstanceRepository {
       final PageResultDto<String> previousPage,
       final Supplier<PageResultDto<String>> firstPageFetchFunction) {
     record Result(String processInstanceId) {}
+
     final int limit = previousPage.getLimit();
     if (previousPage.isLastPage()) {
       return new PageResultDto<>(limit);
@@ -178,7 +192,7 @@ class ProcessInstanceRepositoryOS implements ProcessInstanceRepository {
     } catch (final IOException e) {
       final String reason =
           format("Could not close scroll for class [%s].", getClass().getSimpleName());
-      log.error(reason, e);
+      LOG.error(reason, e);
       throw new OptimizeRuntimeException(reason, e);
     }
   }
@@ -204,6 +218,7 @@ class ProcessInstanceRepositoryOS implements ProcessInstanceRepository {
   private PageResultDto<String> getFirstPageOfProcessInstanceIdsForFilter(
       final String processDefinitionKey, final Query filterQuery, final Integer limit) {
     record Result(String processInstanceId) {}
+
     final PageResultDto<String> result = new PageResultDto<>(limit);
     final Integer resolvedLimit = Optional.ofNullable(limit).orElse(MAX_RESPONSE_SIZE_LIMIT);
 
@@ -230,9 +245,9 @@ class ProcessInstanceRepositoryOS implements ProcessInstanceRepository {
                 processInstanceIds.subList(0, min(response.hits().hits().size(), resolvedLimit)));
       }
       result.setPagingState(response.scrollId());
-    } catch (OpenSearchException e) {
+    } catch (final OpenSearchException e) {
       if (isInstanceIndexNotFoundException(PROCESS, e)) {
-        log.info(
+        LOG.info(
             "Was not able to obtain process instance IDs because instance index {} does not exist. Returning empty result.",
             getProcessInstanceIndexAliasName(processDefinitionKey));
         result.setPagingState(null);

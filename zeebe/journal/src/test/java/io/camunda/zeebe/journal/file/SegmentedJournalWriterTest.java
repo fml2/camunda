@@ -9,7 +9,10 @@ package io.camunda.zeebe.journal.file;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.zeebe.journal.CheckedJournalException.FlushException;
 import io.camunda.zeebe.util.buffer.BufferUtil;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -19,17 +22,21 @@ import java.nio.file.StandardOpenOption;
 import org.agrona.CloseHelper;
 import org.agrona.IoUtil;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class SegmentedJournalWriterTest {
+  @AutoClose private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final TestJournalFactory journalFactory =
       new TestJournalFactory("data", 2, this::fillWithOnes);
   private final SegmentsFlusher flusher = new SegmentsFlusher(journalFactory.metaStore());
 
   private SegmentsManager segments;
   private SegmentedJournalWriter writer;
+  private final SegmentDescriptorSerializer descriptorSerializer =
+      new SegmentDescriptorSerializerSbe();
 
   private void fillWithOnes(final FileChannel channel, final long size) {
     // Fill with ones to verify in tests that the append invalidates next entry by overwriting with
@@ -50,7 +57,7 @@ final class SegmentedJournalWriterTest {
   }
 
   @Test
-  void shouldResetLastFlushedIndexOnDeleteAfter() {
+  void shouldResetLastFlushedIndexOnDeleteAfter() throws FlushException {
     // given
     writer.append(1, journalFactory.entry());
     writer.append(2, journalFactory.entry());
@@ -67,7 +74,7 @@ final class SegmentedJournalWriterTest {
   }
 
   @Test
-  void shouldResetLastFlushedIndexOnReset() {
+  void shouldResetLastFlushedIndexOnReset() throws FlushException {
     // given
     writer.append(1, journalFactory.entry());
     writer.append(2, journalFactory.entry());
@@ -107,15 +114,17 @@ final class SegmentedJournalWriterTest {
     }
     final var lastIndexInFirstSegment = segments.getLastSegment().index() - 1;
 
-    final SegmentDescriptor descriptorToCorrupt = segments.getFirstSegment().descriptor();
-    final Segment firstSegment = segments.getFirstSegment();
-    descriptorToCorrupt.setLastPosition(firstSegment.descriptor().lastPosition() + 1);
+    final var descriptor = segments.getFirstSegment().descriptor();
+    final var firstSegment = segments.getFirstSegment();
+    final var corruptedDescriptor =
+        descriptor.withUpdatedIndices(
+            descriptor.lastIndex(), firstSegment.descriptor().lastPosition() + 1);
     final var segmentFile = firstSegment.file().file().toPath();
     try (final FileChannel channel =
         FileChannel.open(segmentFile, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
       final MappedByteBuffer buffer =
-          channel.map(MapMode.READ_WRITE, 0, descriptorToCorrupt.length());
-      descriptorToCorrupt.updateIfCurrentVersion(buffer);
+          channel.map(MapMode.READ_WRITE, 0, descriptorSerializer.encodingLength());
+      descriptorSerializer.writeTo(corruptedDescriptor, buffer);
     }
 
     // when
@@ -129,7 +138,8 @@ final class SegmentedJournalWriterTest {
   @Test
   void shouldInvalidateNextEntryAfterAppend() {
     try (final SegmentedJournalReader reader =
-        new SegmentedJournalReader(journalFactory.journal(segments), new JournalMetrics("1"))) {
+        new SegmentedJournalReader(
+            journalFactory.journal(segments), new JournalMetrics(meterRegistry))) {
       // when
       writer.append(-1, journalFactory.entry());
 
@@ -156,7 +166,7 @@ final class SegmentedJournalWriterTest {
 
     try (final SegmentedJournalReader reader =
         new SegmentedJournalReader(
-            followerJournalFactory.journal(followerSegments), new JournalMetrics("1"))) {
+            followerJournalFactory.journal(followerSegments), new JournalMetrics(meterRegistry))) {
       // when
       final byte[] serializedRecord = BufferUtil.bufferAsArray(writtenRecord.serializedRecord());
       followerWriter.append(writtenRecord.checksum(), serializedRecord);

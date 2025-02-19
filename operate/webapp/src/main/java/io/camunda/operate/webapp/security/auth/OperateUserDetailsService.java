@@ -7,6 +7,8 @@
  */
 package io.camunda.operate.webapp.security.auth;
 
+import static io.camunda.authentication.entity.CamundaUser.CamundaUserBuilder.aCamundaUser;
+
 import io.camunda.authentication.entity.CamundaUser;
 import io.camunda.operate.OperateProfileService;
 import io.camunda.operate.conditions.DatabaseInfo;
@@ -24,7 +26,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Configuration
@@ -36,13 +38,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
       + " & !"
       + OperateProfileService.IDENTITY_AUTH_PROFILE
       + " & !"
-      + OperateProfileService.AUTH_BASIC
+      + OperateProfileService.CONSOLIDATED_AUTH
 })
-/*
- * Required as primary for now due to a clashing bean in the always active Identity service classes.
- * In future versions this class will be removed and the Identity service will be used instead.
- */
-@Primary
 public class OperateUserDetailsService implements UserDetailsService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(OperateUserDetailsService.class);
@@ -55,7 +52,7 @@ public class OperateUserDetailsService implements UserDetailsService {
   @Bean
   @Primary
   public PasswordEncoder getPasswordEncoder() {
-    return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+    return new BCryptPasswordEncoder();
   }
 
   public void initializeUsers() {
@@ -107,11 +104,12 @@ public class OperateUserDetailsService implements UserDetailsService {
   public CamundaUser loadUserByUsername(final String userId) {
     try {
       final UserEntity userEntity = userStore.getById(userId);
-      return new CamundaUser(
-          userEntity.getDisplayName(),
-          userEntity.getUserId(),
-          userEntity.getPassword(),
-          userEntity.getRoles());
+      return aCamundaUser()
+          .withName(userEntity.getDisplayName())
+          .withUsername(userEntity.getUserId())
+          .withPassword(userEntity.getPassword())
+          .withAuthorities(userEntity.getRoles())
+          .build();
     } catch (final NotFoundException e) {
       throw new UsernameNotFoundException(
           String.format("User with userId '%s' not found.", userId), e);

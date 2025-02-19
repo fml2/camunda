@@ -76,7 +76,7 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
   private ExportersState state;
 
   @SuppressWarnings("java:S3077") // allow volatile here, health is immutable
-  private volatile HealthReport healthReport = HealthReport.healthy(this);
+  private volatile HealthReport healthReport;
 
   private boolean inExportingPhase;
   private ExporterPhase exporterPhase;
@@ -97,7 +97,6 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
   public ExporterDirector(
       final ExporterDirectorContext context, final ExporterPhase exporterPhase) {
     name = context.getName();
-
     logStream = Objects.requireNonNull(context.getLogStream());
     partitionId = logStream.getPartitionId();
     meterRegistry = context.getMeterRegistry();
@@ -113,7 +112,7 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
                         meterRegistry,
                         clock))
             .collect(Collectors.toCollection(ArrayList::new));
-    metrics = new ExporterMetrics(partitionId);
+    metrics = new ExporterMetrics(meterRegistry);
     metrics.initializeExporterState(exporterPhase);
     recordExporter = new RecordExporter(metrics, containers, partitionId, clock);
     exportingRetryStrategy = new BackOffRetryStrategy(actor, Duration.ofSeconds(10));
@@ -125,6 +124,9 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
     exporterMode = context.getExporterMode();
     distributionInterval = context.getDistributionInterval();
     positionsToSkipFilter = context.getPositionsToSkipFilter();
+
+    // needs name to be initialized
+    healthReport = HealthReport.healthy(this);
   }
 
   public ActorFuture<Void> startAsync(final ActorSchedulingService actorSchedulingService) {
@@ -405,11 +407,8 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
   @Override
   protected void onActorCloseRequested() {
     isOpened.set(false);
-    if (exporterMode == ExporterMode.ACTIVE) {
-      containers.forEach(ExporterContainer::close);
-    } else {
-      exporterDistributionService.close();
-    }
+    containers.forEach(ExporterContainer::close);
+    exporterDistributionService.close();
   }
 
   @Override
@@ -423,13 +422,13 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
     actor.fail(failure);
 
     if (failure instanceof UnrecoverableException) {
-      healthReport = HealthReport.dead(this).withIssue(failure);
+      healthReport = HealthReport.dead(this).withIssue(failure, clock.instant());
 
       for (final var listener : listeners) {
         listener.onUnrecoverableFailure(healthReport);
       }
     } else {
-      healthReport = HealthReport.unhealthy(this).withIssue(failure);
+      healthReport = HealthReport.unhealthy(this).withIssue(failure, clock.instant());
       for (final var listener : listeners) {
         listener.onFailure(healthReport);
       }
@@ -687,6 +686,11 @@ public final class ExporterDirector extends Actor implements HealthMonitorable, 
 
   private boolean isClosed() {
     return !isOpened.get();
+  }
+
+  @Override
+  public String componentName() {
+    return name;
   }
 
   @Override

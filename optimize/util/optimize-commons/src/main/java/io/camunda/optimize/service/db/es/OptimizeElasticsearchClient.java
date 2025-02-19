@@ -10,7 +10,9 @@ package io.camunda.optimize.service.db.es;
 import static io.camunda.optimize.service.db.DatabaseConstants.NUMBER_OF_RETRIES_ON_CONFLICT;
 import static io.camunda.optimize.service.db.schema.index.AbstractDefinitionIndex.DATA_SOURCE;
 import static io.camunda.optimize.service.db.schema.index.AbstractDefinitionIndex.DEFINITION_DELETED;
+import static io.camunda.optimize.service.util.WorkaroundUtil.replaceNullWithNanInAggregations;
 import static io.camunda.optimize.service.util.mapper.ObjectMapperFactory.OPTIMIZE_MAPPER;
+import static io.camunda.optimize.service.util.mapper.ObjectMapperFactory.OPTIMIZE_MAPPER_UNKNOWN_FAIL_DISABLED;
 import static java.util.stream.Collectors.groupingBy;
 
 import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
@@ -63,7 +65,7 @@ import co.elastic.clients.elasticsearch.indices.GetAliasRequest;
 import co.elastic.clients.elasticsearch.indices.GetAliasResponse;
 import co.elastic.clients.elasticsearch.indices.GetIndexRequest;
 import co.elastic.clients.elasticsearch.indices.GetIndicesSettingsResponse;
-import co.elastic.clients.elasticsearch.indices.GetMappingRequest;
+import co.elastic.clients.elasticsearch.indices.GetMappingRequest.Builder;
 import co.elastic.clients.elasticsearch.indices.GetMappingResponse;
 import co.elastic.clients.elasticsearch.indices.PutIndicesSettingsRequest;
 import co.elastic.clients.elasticsearch.indices.PutMappingRequest;
@@ -89,7 +91,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.optimize.dto.optimize.DataImportSourceType;
 import io.camunda.optimize.dto.optimize.ImportRequestDto;
-import io.camunda.optimize.dto.optimize.datasource.DataSourceDto;
+import io.camunda.optimize.dto.optimize.datasource.DataSourceDto.Fields;
 import io.camunda.optimize.service.db.DatabaseClient;
 import io.camunda.optimize.service.db.es.builders.OptimizeSearchRequestBuilderES;
 import io.camunda.optimize.service.db.es.builders.OptimizeUpdateRequestBuilderES;
@@ -101,24 +103,23 @@ import io.camunda.optimize.service.exceptions.OptimizeRuntimeException;
 import io.camunda.optimize.service.util.configuration.ConfigurationService;
 import io.camunda.optimize.service.util.configuration.DatabaseType;
 import io.camunda.optimize.upgrade.es.ElasticsearchClientBuilder;
+import io.camunda.search.clients.DocumentBasedSearchClient;
 import io.camunda.search.connect.plugin.PluginRepository;
+import io.camunda.search.es.clients.ElasticsearchSearchClient;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
-import lombok.Getter;
-import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.http.HttpEntity;
@@ -128,6 +129,8 @@ import org.elasticsearch.client.Request;
 import org.elasticsearch.client.Response;
 import org.elasticsearch.client.ResponseException;
 import org.elasticsearch.client.RestClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 
 /**
@@ -140,12 +143,13 @@ import org.springframework.context.ApplicationContext;
  * <p>For low level operations it still exposes the underlying {@link ElasticsearchClient}, as well
  * as the {@link OptimizeIndexNameService}.
  */
-@Slf4j
 public class OptimizeElasticsearchClient extends DatabaseClient {
 
+  private static final Logger LOG = LoggerFactory.getLogger(OptimizeElasticsearchClient.class);
   private RestClient restClient;
   private final ObjectMapper objectMapper;
-  @Getter private ElasticsearchClient esClient;
+  private ElasticsearchClient esClient;
+  private final DocumentBasedSearchClient documentBasedSearchClient;
   private ElasticsearchAsyncClient elasticsearchAsyncClient;
   private TransportOptionsProvider transportOptionsProvider;
 
@@ -170,6 +174,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
     this.transportOptionsProvider = transportOptionsProvider;
     elasticsearchAsyncClient =
         new ElasticsearchAsyncClient(esClient._transport(), esClient._transportOptions());
+    documentBasedSearchClient = new ElasticsearchSearchClient(esWithTransportOptions());
   }
 
   public final ElasticsearchClient esWithTransportOptions() {
@@ -177,8 +182,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   }
 
   public final GetMappingResponse getMapping(
-      final GetMappingRequest.Builder getMappingsRequest, final String... indexes)
-      throws IOException {
+      final Builder getMappingsRequest, final String... indexes) throws IOException {
     getMappingsRequest.index(Arrays.stream(convertToPrefixedAliasNames(indexes)).toList());
     return esWithTransportOptions().indices().getMapping(getMappingsRequest.build());
   }
@@ -200,42 +204,48 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
         OPTIMIZE_MAPPER.readValue(response.getEntity().getContent(), Map.class);
     for (final Map contentEntry : responseContentAsMap.values()) {
       final Map settings = (Map) contentEntry.get("settings");
-      if (settings != null) {
-        final Map index = (Map) settings.get("index");
-        if (index != null) {
-          final Map analysis = (Map) index.get("analysis");
-          if (analysis != null) {
-            Map analyzer = (Map) ((Map) analysis.get("analyzer")).get("is_present_analyzer");
-            if (!List.class.isInstance(analyzer.get("filter"))) {
-              analyzer.put("filter", List.of(analyzer.get("filter")));
-            }
-            Map lowercaseNgram = (Map) ((Map) analysis.get("analyzer")).get("lowercase_ngram");
-            if (!List.class.isInstance(lowercaseNgram.get("filter"))) {
-              lowercaseNgram.put("filter", List.of(lowercaseNgram.get("filter")));
-            }
-            final Map tokenizer = (Map) analysis.get("tokenizer");
-            if (tokenizer != null) {
-              final Map ngramTokenizer = (Map) tokenizer.get("ngram_tokenizer");
-              if (!ngramTokenizer.containsKey("token_chars")) {
-                ngramTokenizer.put(
-                    "token_chars",
-                    List.of(
-                        TokenChar.Letter.jsonValue(),
-                        TokenChar.Digit.jsonValue(),
-                        TokenChar.Whitespace.jsonValue(),
-                        TokenChar.Punctuation.jsonValue(),
-                        TokenChar.Symbol.jsonValue()));
-              }
-            }
-          }
-        }
+      if (settings == null) {
+        continue;
+      }
+      final Map index = (Map) settings.get("index");
+      if (index == null) {
+        continue;
+      }
+      final Map analysis = (Map) index.get("analysis");
+      if (analysis == null) {
+        continue;
+      }
+      final Map analyzer = (Map) ((Map) analysis.get("analyzer")).get("is_present_analyzer");
+      if (!List.class.isInstance(analyzer.get("filter"))) {
+        analyzer.put("filter", List.of(analyzer.get("filter")));
+      }
+      final Map lowercaseNgram = (Map) ((Map) analysis.get("analyzer")).get("lowercase_ngram");
+      if (!List.class.isInstance(lowercaseNgram.get("filter"))) {
+        lowercaseNgram.put("filter", List.of(lowercaseNgram.get("filter")));
+      }
+      final Map tokenizer = (Map) analysis.get("tokenizer");
+      if (tokenizer == null) {
+        continue;
+      }
+      final Map ngramTokenizer = (Map) tokenizer.get("ngram_tokenizer");
+      if (!ngramTokenizer.containsKey("token_chars")) {
+        ngramTokenizer.put(
+            "token_chars",
+            List.of(
+                TokenChar.Letter.jsonValue(),
+                TokenChar.Digit.jsonValue(),
+                TokenChar.Whitespace.jsonValue(),
+                TokenChar.Punctuation.jsonValue(),
+                TokenChar.Symbol.jsonValue()));
       }
     }
     return GetIndicesSettingsResponse.of(
         b -> {
           try {
             return b.withJson(
-                new StringReader(OPTIMIZE_MAPPER.writeValueAsString(responseContentAsMap)));
+                new StringReader(
+                    OPTIMIZE_MAPPER_UNKNOWN_FAIL_DISABLED.writeValueAsString(
+                        responseContentAsMap)));
           } catch (final JsonProcessingException e) {
             throw new RuntimeException(e);
           }
@@ -295,7 +305,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
       final BiConsumer<BulkRequest.Builder, T> addDtoToRequestConsumer,
       final boolean retryRequestIfNestedDocLimitReached) {
     if (entityCollection.isEmpty()) {
-      log.warn("Cannot perform bulk request with empty collection of {}.", importItemName);
+      LOG.warn("Cannot perform bulk request with empty collection of {}.", importItemName);
     } else {
       final BulkRequest bulkRequest =
           BulkRequest.of(
@@ -310,10 +320,6 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   public final <T> GetResponse<T> get(final GetRequest getRequest, final Class<T> tClass)
       throws IOException {
     return esWithTransportOptions().get(getRequest, tClass);
-  }
-
-  public final boolean exists(final String indexName) throws IOException {
-    return exists(ExistsRequest.of(b -> b.index(List.of(convertToPrefixedAliasName(indexName)))));
   }
 
   public final boolean exists(final IndexMappingCreator indexMappingCreator) throws IOException {
@@ -350,7 +356,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   public void deleteIndexTemplateByIndexTemplateName(final String indexTemplateName) {
     final String prefixedIndexTemplateName =
         indexNameService.getOptimizeIndexAliasForIndex(indexTemplateName);
-    log.debug("Deleting index template [{}].", prefixedIndexTemplateName);
+    LOG.debug("Deleting index template [{}].", prefixedIndexTemplateName);
     try {
       esWithTransportOptions().indices().deleteTemplate(b -> b.name(prefixedIndexTemplateName));
     } catch (final IOException e) {
@@ -358,17 +364,11 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
           String.format("Could not delete index template [%s]!", prefixedIndexTemplateName);
       throw new OptimizeRuntimeException(errorMessage, e);
     }
-    log.debug("Successfully deleted index template [{}].", prefixedIndexTemplateName);
+    LOG.debug("Successfully deleted index template [{}].", prefixedIndexTemplateName);
   }
 
   public void createIndex(final CreateIndexRequest request) throws IOException {
     esWithTransportOptions().indices().create(request);
-  }
-
-  @Override
-  @SneakyThrows
-  public long countWithoutPrefix(final String unprefixedIndex) {
-    return countWithoutPrefix(CountRequest.of(c -> c.index(unprefixedIndex)));
   }
 
   public long countWithoutPrefix(final CountRequest request)
@@ -379,7 +379,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
     while (retryAttempts < maxNumberOfRetries) {
       final CountResponse countResponse = esWithTransportOptions().count(request);
       if (countResponse.shards().failed().intValue() > 0) {
-        log.info(
+        LOG.info(
             "Not all shards returned successful for count response from indices: {}",
             request.index());
         retryAttempts++;
@@ -419,8 +419,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   public Map<String, Set<String>> getAliasesForIndexPattern(final String indexNamePattern) {
     try {
       return getAlias(indexNamePattern).result().entrySet().stream()
-          .collect(
-              Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().aliases().keySet()));
+          .collect(Collectors.toMap(Entry::getKey, entry -> entry.getValue().aliases().keySet()));
     } catch (final IOException e) {
       throw new RuntimeException(e);
     }
@@ -447,27 +446,32 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   }
 
   @Override
+  public final boolean exists(final String indexName) throws IOException {
+    return exists(ExistsRequest.of(b -> b.index(List.of(convertToPrefixedAliasName(indexName)))));
+  }
+
+  @Override
   public boolean triggerRollover(final String indexAliasName, final int maxIndexSizeGB) {
     final RolloverRequest rolloverRequest =
         RolloverRequest.of(
             b ->
                 b.alias(convertToPrefixedAliasName(indexAliasName))
                     .conditions(builder -> builder.maxSize(maxIndexSizeGB + "gb")));
-    log.info("Executing rollover request on {}", indexAliasName);
+    LOG.info("Executing rollover request on {}", indexAliasName);
     try {
       final RolloverResponse rolloverResponse = rollover(rolloverRequest);
       if (rolloverResponse.rolledOver()) {
-        log.info(
+        LOG.info(
             "Index with alias {} has been rolled over. New index name: {}",
             indexAliasName,
             rolloverResponse.newIndex());
       } else {
-        log.debug("Index with alias {} has not been rolled over.", indexAliasName);
+        LOG.debug("Index with alias {} has not been rolled over.", indexAliasName);
       }
       return rolloverResponse.rolledOver();
     } catch (final Exception e) {
       final String message = "Failed to execute rollover request";
-      log.error(message, e);
+      LOG.error(message, e);
       throw new OptimizeRuntimeException(message, e);
     }
   }
@@ -479,29 +483,24 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   }
 
   @Override
+  public long countWithoutPrefix(final String unprefixedIndex) {
+    try {
+      return countWithoutPrefix(CountRequest.of(c -> c.index(unprefixedIndex)));
+    } catch (final IOException | InterruptedException e) {
+      throw new OptimizeRuntimeException(e);
+    }
+  }
+
+  @Override
   public void refresh(final String indexPattern) {
     final RefreshRequest.Builder builder = new RefreshRequest.Builder();
     applyIndexPrefixes(builder, List.of(indexPattern));
     try {
       esWithTransportOptions().indices().refresh(builder.build());
     } catch (final IOException e) {
-      log.error("Could not refresh Optimize indexes!", e);
+      LOG.error("Could not refresh Optimize indexes!", e);
       throw new OptimizeRuntimeException("Could not refresh Optimize indexes!", e);
     }
-  }
-
-  @Override
-  public <T> long count(final String[] indexNames, final T query) throws IOException {
-    return Objects.requireNonNull(
-            count(
-                CountRequest.of(
-                    b -> {
-                      final CountRequest.Builder builder =
-                          b.index(List.of(convertToPrefixedAliasNames(indexNames)));
-                      builder.query(q -> q.bool(((BoolQuery.Builder) query).build()));
-                      return b;
-                    })))
-        .count();
   }
 
   @Override
@@ -547,6 +546,11 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   }
 
   @Override
+  public DocumentBasedSearchClient documentBasedSearchClient() {
+    return documentBasedSearchClient;
+  }
+
+  @Override
   public void update(final String indexName, final String entityId, final ScriptData script) {
     try {
       update(
@@ -562,7 +566,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
                                               script.params().entrySet().stream()
                                                   .collect(
                                                       Collectors.toMap(
-                                                          Map.Entry::getKey,
+                                                          Entry::getKey,
                                                           e -> JsonData.of(e.getValue()))))
                                           .source(script.scriptString())
                                           .lang(ScriptLanguage.Painless)))
@@ -573,7 +577,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
           String.format(
               "The error occurs while updating OpenSearch entity %s with id %s",
               indexName, entityId);
-      log.error(errorMessage, e);
+      LOG.error(errorMessage, e);
       throw new OptimizeRuntimeException(errorMessage, e);
     }
   }
@@ -593,7 +597,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
 
               requestsByType.forEach(
                   (type, requests) -> {
-                    log.debug(
+                    LOG.debug(
                         "Adding [{}] requests of type {} to bulk request", requests.size(), type);
                     requests.forEach(
                         importRequest -> applyOperationToBulkRequest(b, importRequest));
@@ -611,7 +615,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
       final String definitionIdField,
       final int maxPageSize,
       final String engineAlias) {
-    log.debug("Performing " + indexName + " search query!");
+    LOG.debug("Performing " + indexName + " search query!");
     final SearchRequest searchRequest =
         OptimizeSearchRequestBuilderES.of(
             builder ->
@@ -634,10 +638,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
                                             lb ->
                                                 lb.term(
                                                     tb ->
-                                                        tb.field(
-                                                                DATA_SOURCE
-                                                                    + "."
-                                                                    + DataSourceDto.Fields.type)
+                                                        tb.field(DATA_SOURCE + "." + Fields.type)
                                                             .value(
                                                                 FieldValue.of(
                                                                     DataImportSourceType.ENGINE))))
@@ -645,10 +646,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
                                             lb ->
                                                 lb.term(
                                                     tb ->
-                                                        tb.field(
-                                                                DATA_SOURCE
-                                                                    + "."
-                                                                    + DataSourceDto.Fields.name)
+                                                        tb.field(DATA_SOURCE + "." + Fields.name)
                                                             .value(engineAlias)))))
                     .source(sb -> sb.fetch(false))
                     .sort(
@@ -663,11 +661,11 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
       refresh(RefreshRequest.of(rb -> rb.index(addPrefixesToIndices(indexName))));
       searchResponse = search(searchRequest, Object.class);
     } catch (final IOException e) {
-      log.error("Was not able to search for " + indexName + "!", e);
+      LOG.error("Was not able to search for " + indexName + "!", e);
       throw new OptimizeRuntimeException("Was not able to search for " + indexName + "!", e);
     }
 
-    log.debug(indexName + " search query got [{}] results", searchResponse.hits().hits().size());
+    LOG.debug(indexName + " search query got [{}] results", searchResponse.hits().hits().size());
 
     return searchResponse.hits().hits().stream().map(Hit::id).collect(Collectors.toSet());
   }
@@ -680,14 +678,32 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   @Override
   public void deleteIndexByRawIndexNames(final String... indexNames) {
     final String indexNamesString = Arrays.toString(indexNames);
-    log.debug("Deleting indices [{}].", indexNamesString);
+    LOG.debug("Deleting indices [{}].", indexNamesString);
     dbClientSnapshotFailsafe("DeleteIndex: " + indexNamesString)
         .get(
             () ->
                 esWithTransportOptions()
                     .indices()
                     .delete(DeleteIndexRequest.of(b -> b.index(List.of(indexNames)))));
-    log.debug("Successfully deleted index [{}].", indexNamesString);
+    LOG.debug("Successfully deleted index [{}].", indexNamesString);
+  }
+
+  @Override
+  public void deleteAllIndexes() {
+    deleteIndexByRawIndexNames("_all");
+  }
+
+  public long count(final String[] indexNames, final BoolQuery.Builder query) throws IOException {
+    return Objects.requireNonNull(
+            count(
+                CountRequest.of(
+                    b -> {
+                      final CountRequest.Builder builder =
+                          b.index(List.of(convertToPrefixedAliasNames(indexNames)));
+                      builder.query(q -> q.bool(query.build()));
+                      return b;
+                    })))
+        .count();
   }
 
   public final GetAliasResponse getAlias(final GetAliasRequest getAliasesRequest)
@@ -718,11 +734,6 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
     deleteIndex(indexAlias);
   }
 
-  @Override
-  public void deleteAllIndexes() {
-    deleteIndexByRawIndexNames("_all");
-  }
-
   public final CountResponse count(final CountRequest countRequest) throws IOException {
     return esWithTransportOptions().count(countRequest);
   }
@@ -749,7 +760,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
       request.setEntity(entity);
       final Response response = restClient.performRequest(request);
       final Map map = OPTIMIZE_MAPPER.readValue(response.getEntity().getContent(), Map.class);
-      changeAggregationNullValuesOnNAN(map);
+      replaceNullWithNanInAggregations(map);
       return SearchResponse.of(
           s -> {
             try {
@@ -769,58 +780,6 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
                   throw new RuntimeException(ex);
                 }
               }));
-    }
-  }
-
-  /**
-   * This method implements a workaround to address a breaking change introduced in the
-   * Elasticsearch client library.
-   *
-   * <p>In a recent version of the Elasticsearch Java client, the behavior of aggregation values
-   * changed. Previously, aggregation results could contain {@code null} values, but in the newer
-   * version, {@code null} values are replaced with a default value of 0.0. Additionally, this
-   * change also involved converting the aggregation result to a primitive {@code double}, which
-   * cannot represent {@code null}. This breaking change has caused significant issues in our APIs,
-   * which rely on the presence of {@code null} to distinguish between absent and zero-valued
-   * aggregations.
-   *
-   * <p>To mitigate this, we opted to use the low-level client API to perform the search request, as
-   * it does not enforce default deserialization. By retrieving the raw response as a {@code Map},
-   * we can manually inspect the aggregation values. If a {@code null} value is found, we replace it
-   * with {@code Double.NaN}, which our existing logic handles appropriately. This approach allows
-   * us to maintain backward compatibility without waiting for the official fix, which the
-   * Elasticsearch team has indicated will be reintroduced in an upcoming minor release.
-   *
-   * <p>Note that this workaround will be removed once the issue is resolved in the Elasticsearch
-   * client library.
-   *
-   * <p>This solution ensures that our API continues to function correctly, despite the changes in
-   * the underlying Elasticsearch client.
-   */
-  public static void changeAggregationNullValuesOnNAN(final Map<String, Object> map) {
-    for (final Map.Entry<String, Object> entry : map.entrySet()) {
-      final String key = entry.getKey();
-      final Object value = entry.getValue();
-
-      if (key.contains("avg#")
-          || key.contains("max#")
-          || key.contains("sum#")
-          || key.contains("min#")) {
-        final Object o = ((Map<String, Object>) value).get("value");
-        if (o == null) {
-          ((Map<String, Object>) value).put("value", Double.NaN);
-        }
-      }
-
-      if (value instanceof HashMap) {
-        changeAggregationNullValuesOnNAN((Map<String, Object>) value);
-      } else if (value instanceof final List<?> values) {
-        for (final Object o : values) {
-          if (o instanceof HashMap) {
-            changeAggregationNullValuesOnNAN((Map<String, Object>) o);
-          }
-        }
-      }
     }
   }
 
@@ -876,6 +835,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
                                                   requestDto.getScriptData().scriptString(),
                                                   requestDto.getScriptData().params())))
                               .retryOnConflict(requestDto.getRetryNumberOnConflict())));
+      default -> throw new IllegalStateException("Unexpected value: " + requestDto.getType());
     }
   }
 
@@ -891,7 +851,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
                             params.entrySet().stream()
                                 .collect(
                                     Collectors.toMap(
-                                        Map.Entry::getKey, e -> JsonData.of(e.getValue()))))));
+                                        Entry::getKey, e -> JsonData.of(e.getValue()))))));
   }
 
   public void doBulkRequest(
@@ -916,6 +876,7 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
                   itemName,
                   getHintForErrorMsg(bulkResponse),
                   bulkResponse.items().stream()
+                      .filter(i -> Objects.nonNull(i.error()))
                       .map(
                           i ->
                               i.operationType() + " " + i.error().type() + " " + i.error().reason())
@@ -924,11 +885,11 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
       } catch (final IOException e) {
         final String reason =
             String.format("There were errors while performing a bulk on %s.", itemName);
-        log.error(reason, e);
+        LOG.error(reason, e);
         throw new OptimizeRuntimeException(reason, e);
       }
     } else {
-      log.debug("Bulkrequest on {} not executed because it contains no actions.", itemName);
+      LOG.debug("Bulkrequest on {} not executed because it contains no actions.", itemName);
     }
   }
 
@@ -958,56 +919,57 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   private void doBulkRequestWithNestedDocHandling(
       final BulkRequest bulkRequest, final String itemName) {
     if (bulkRequest != null && !bulkRequest.operations().isEmpty()) {
-      log.info(
+      LOG.info(
           "Executing bulk request on {} items of {}", bulkRequest.operations().size(), itemName);
       try {
         final BulkResponse bulkResponse = bulk(bulkRequest);
-        if (bulkResponse.errors()) {
-          if (containsNestedDocumentLimitErrorMessage(bulkResponse)) {
-            final Set<String> failedItemIds =
-                bulkResponse.items().stream()
-                    .filter(b -> b.error() != null && b.error().reason() != null)
-                    .filter(
-                        responseItem ->
-                            responseItem.error().reason().contains(NESTED_DOC_LIMIT_MESSAGE))
-                    .map(BulkResponseItem::id)
-                    .collect(Collectors.toSet());
-            log.warn(
-                "There were failures while performing bulk on {} due to the nested document limit being reached."
-                    + " Removing {} failed items and retrying",
-                itemName,
-                failedItemIds.size());
-            final List<BulkOperation> bulkOperations = new ArrayList<>(bulkRequest.operations());
-            bulkOperations.removeIf(
-                request -> {
-                  if (request.isCreate()) {
-                    return failedItemIds.contains(request.create().id());
-                  } else if (request.isUpdate()) {
-                    return failedItemIds.contains(request.update().id());
-                  } else if (request.isDelete()) {
-                    return failedItemIds.contains(request.delete().id());
-                  } else if (request.isIndex()) {
-                    return failedItemIds.contains(request.index().id());
-                  }
-                  return false;
-                });
-            if (!bulkOperations.isEmpty()) {
-              doBulkRequestWithNestedDocHandling(
-                  BulkRequest.of(b -> b.operations(bulkOperations)), itemName);
-            }
-          } else {
-            throw new OptimizeRuntimeException(
-                String.format("There were failures while performing bulk on %s", itemName));
+        if (!bulkResponse.errors()) {
+          return;
+        }
+        if (containsNestedDocumentLimitErrorMessage(bulkResponse)) {
+          final Set<String> failedItemIds =
+              bulkResponse.items().stream()
+                  .filter(b -> b.error() != null && b.error().reason() != null)
+                  .filter(
+                      responseItem ->
+                          responseItem.error().reason().contains(NESTED_DOC_LIMIT_MESSAGE))
+                  .map(BulkResponseItem::id)
+                  .collect(Collectors.toSet());
+          LOG.warn(
+              "There were failures while performing bulk on {} due to the nested document limit being reached."
+                  + " Removing {} failed items and retrying",
+              itemName,
+              failedItemIds.size());
+          final List<BulkOperation> bulkOperations = new ArrayList<>(bulkRequest.operations());
+          bulkOperations.removeIf(
+              request -> {
+                if (request.isCreate()) {
+                  return failedItemIds.contains(request.create().id());
+                } else if (request.isUpdate()) {
+                  return failedItemIds.contains(request.update().id());
+                } else if (request.isDelete()) {
+                  return failedItemIds.contains(request.delete().id());
+                } else if (request.isIndex()) {
+                  return failedItemIds.contains(request.index().id());
+                }
+                return false;
+              });
+          if (!bulkOperations.isEmpty()) {
+            doBulkRequestWithNestedDocHandling(
+                BulkRequest.of(b -> b.operations(bulkOperations)), itemName);
           }
+        } else {
+          throw new OptimizeRuntimeException(
+              String.format("There were failures while performing bulk on %s", itemName));
         }
       } catch (final IOException e) {
         final String reason =
             String.format("There were errors while performing a bulk on %s.", itemName);
-        log.error(reason, e);
+        LOG.error(reason, e);
         throw new OptimizeRuntimeException(reason, e);
       }
     } else {
-      log.debug("Bulkrequest on {} not executed because it contains no actions.", itemName);
+      LOG.debug("Bulkrequest on {} not executed because it contains no actions.", itemName);
     }
   }
 
@@ -1061,5 +1023,9 @@ public class OptimizeElasticsearchClient extends DatabaseClient {
   public final <T> SearchResponse<T> searchWithoutPrefixing(
       final SearchRequest searchRequest, final Class<T> clas) throws IOException {
     return esWithTransportOptions().search(searchRequest, clas);
+  }
+
+  public ElasticsearchClient getEsClient() {
+    return esClient;
   }
 }

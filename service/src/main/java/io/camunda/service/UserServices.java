@@ -11,43 +11,74 @@ import io.camunda.search.clients.UserSearchClient;
 import io.camunda.search.entities.UserEntity;
 import io.camunda.search.query.SearchQueryResult;
 import io.camunda.search.query.UserQuery;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
+import io.camunda.security.auth.Authorization;
 import io.camunda.service.search.core.SearchQueryService;
+import io.camunda.service.security.SecurityContextProvider;
 import io.camunda.zeebe.broker.client.api.BrokerClient;
 import io.camunda.zeebe.gateway.impl.broker.request.BrokerUserCreateRequest;
+import io.camunda.zeebe.gateway.impl.broker.request.BrokerUserDeleteRequest;
+import io.camunda.zeebe.gateway.impl.broker.request.BrokerUserUpdateRequest;
 import io.camunda.zeebe.protocol.impl.record.value.user.UserRecord;
 import java.util.concurrent.CompletableFuture;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 public class UserServices extends SearchQueryService<UserServices, UserQuery, UserEntity> {
 
   private final UserSearchClient userSearchClient;
+  private final PasswordEncoder passwordEncoder;
 
   public UserServices(
       final BrokerClient brokerClient,
+      final SecurityContextProvider securityContextProvider,
       final UserSearchClient userSearchClient,
-      final Authentication authentication) {
-    super(brokerClient, authentication);
+      final Authentication authentication,
+      final PasswordEncoder passwordEncoder) {
+    super(brokerClient, securityContextProvider, authentication);
     this.userSearchClient = userSearchClient;
+    this.passwordEncoder = passwordEncoder;
   }
 
   @Override
   public SearchQueryResult<UserEntity> search(final UserQuery query) {
-    return userSearchClient.searchUsers(query, authentication);
+    return userSearchClient
+        .withSecurityContext(
+            securityContextProvider.provideSecurityContext(
+                authentication, Authorization.of(a -> a.user().read())))
+        .searchUsers(query);
   }
 
   @Override
   public UserServices withAuthentication(final Authentication authentication) {
-    return new UserServices(brokerClient, userSearchClient, authentication);
+    return new UserServices(
+        brokerClient, securityContextProvider, userSearchClient, authentication, passwordEncoder);
   }
 
-  public CompletableFuture<UserRecord> createUser(final CreateUserRequest request) {
+  public CompletableFuture<UserRecord> createUser(final UserDTO request) {
+    final String encodedPassword = passwordEncoder.encode(request.password());
     return sendBrokerRequest(
         new BrokerUserCreateRequest()
             .setUsername(request.username())
             .setName(request.name())
             .setEmail(request.email())
-            .setPassword(request.password()));
+            .setPassword(encodedPassword));
   }
 
-  public record CreateUserRequest(String username, String name, String email, String password) {}
+  public CompletableFuture<UserRecord> updateUser(final UserDTO request) {
+    final String encodedPassword =
+        StringUtils.isEmpty(request.password) ? "" : passwordEncoder.encode(request.password());
+    return sendBrokerRequest(
+        new BrokerUserUpdateRequest()
+            .setUsername(request.username())
+            .setName(request.name())
+            .setEmail(request.email())
+            .setPassword(encodedPassword));
+  }
+
+  public CompletableFuture<UserRecord> deleteUser(final String username) {
+    return sendBrokerRequest(new BrokerUserDeleteRequest().setUsername(username));
+  }
+
+  public record UserDTO(String username, String name, String email, String password) {}
 }

@@ -10,10 +10,14 @@ package io.camunda.search.clients;
 import io.camunda.search.entities.AuthorizationEntity;
 import io.camunda.search.query.AuthorizationQuery;
 import io.camunda.search.query.SearchQueryResult;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.SecurityContext;
+import java.util.List;
 
-public interface AuthorizationSearchClient extends AutoCloseable {
+public interface AuthorizationSearchClient {
 
-  SearchQueryResult<AuthorizationEntity> searchAuthorizations(
-      AuthorizationQuery filter, Authentication authentication);
+  SearchQueryResult<AuthorizationEntity> searchAuthorizations(AuthorizationQuery filter);
+
+  List<AuthorizationEntity> findAllAuthorizations(AuthorizationQuery filter);
+
+  AuthorizationSearchClient withSecurityContext(SecurityContext securityContext);
 }

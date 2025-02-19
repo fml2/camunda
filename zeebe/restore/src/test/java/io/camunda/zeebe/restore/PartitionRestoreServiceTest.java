@@ -30,6 +30,8 @@ import io.camunda.zeebe.snapshots.SnapshotException.CorruptedSnapshotException;
 import io.camunda.zeebe.snapshots.impl.FileBasedSnapshotStore;
 import io.camunda.zeebe.util.FileUtil;
 import io.camunda.zeebe.util.buffer.DirectBufferWriter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -38,12 +40,14 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +61,7 @@ class PartitionRestoreServiceTest {
   private static final String SNAPSHOT_FILE_NAME = "file1";
   @TempDir Path dataDirectory;
   @TempDir Path dataDirectoryToRestore;
+  @AutoClose MeterRegistry meterRegistry = new SimpleMeterRegistry();
   private TestRestorableBackupStore backupStore;
   private SegmentedJournal journal;
   private PartitionRestoreService restoreService;
@@ -84,6 +89,21 @@ class PartitionRestoreServiceTest {
         new FileBasedSnapshotStore(0, partitionId, dataDirectory, snapshotPath -> Map.of());
     actorScheduler.submitActor(snapshotStore, SchedulingHints.IO_BOUND);
 
+    final var partitionMetadata =
+        new PartitionMetadata(
+            PartitionId.from("raft", partitionId), Set.of(), Map.of(), 1, new MemberId("1"));
+    final var raftPartition =
+        new RaftPartition(partitionMetadata, null, dataDirectoryToRestore.toFile(), meterRegistry);
+    restoreService =
+        new PartitionRestoreService(backupStore, raftPartition, nodeId, snapshotPath -> Map.of());
+
+    journal =
+        SegmentedJournal.builder(meterRegistry)
+            .withDirectory(dataDirectory.toFile())
+            .withName(raftPartition.name())
+            .withMetaStore(mock(JournalMetaStore.class))
+            .build();
+
     backupService =
         new BackupService(
             nodeId,
@@ -92,23 +112,10 @@ class PartitionRestoreServiceTest {
             backupStore,
             snapshotStore,
             dataDirectory,
-            path -> path.toString().endsWith(".log"));
+            // RaftPartitions implements this interface, but the RaftServer is not started
+            index -> CompletableFuture.completedFuture(journal.getTailSegments(index).values()),
+            meterRegistry);
     actorScheduler.submitActor(backupService);
-
-    final var partitionMetadata =
-        new PartitionMetadata(
-            PartitionId.from("raft", partitionId), Set.of(), Map.of(), 1, new MemberId("1"));
-    final var raftPartition =
-        new RaftPartition(partitionMetadata, null, dataDirectoryToRestore.toFile());
-    restoreService =
-        new PartitionRestoreService(backupStore, raftPartition, nodeId, snapshotPath -> Map.of());
-
-    journal =
-        SegmentedJournal.builder()
-            .withDirectory(dataDirectory.toFile())
-            .withName(raftPartition.name())
-            .withMetaStore(mock(JournalMetaStore.class))
-            .build();
   }
 
   @AfterEach

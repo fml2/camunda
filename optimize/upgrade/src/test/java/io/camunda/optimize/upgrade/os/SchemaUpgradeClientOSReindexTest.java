@@ -33,7 +33,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import lombok.SneakyThrows;
 import org.apache.http.HttpEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -56,6 +55,7 @@ import org.opensearch.client.opensearch.tasks.Status;
 
 @ExtendWith(MockitoExtension.class)
 public class SchemaUpgradeClientOSReindexTest {
+
   @RegisterExtension
   LogCapturer logCapturer = LogCapturer.create().captureForType(SchemaUpgradeClientOS.class);
 
@@ -68,7 +68,7 @@ public class SchemaUpgradeClientOSReindexTest {
   @Mock private OptimizeIndexNameService indexNameService;
   @Mock private OpenSearchMetadataService metadataService;
   @Mock private Info taskInfo;
-  private SchemaUpgradeClient<?, ?> underTest;
+  private SchemaUpgradeClient<?, ?, ?> underTest;
 
   @BeforeEach
   public void init() {
@@ -280,7 +280,6 @@ public class SchemaUpgradeClientOSReindexTest {
                 .versionConflicts(0L));
   }
 
-  @SneakyThrows
   private void mockReindexStatus(final String taskId, final Status inProgressStatus) {
 
     final GetTasksResponse completedResponse =
@@ -316,12 +315,10 @@ public class SchemaUpgradeClientOSReindexTest {
         List.of(sourceIndexName), targetIndexName);
   }
 
-  @SneakyThrows
   private OngoingStubbing<GetTasksResponse> whenReindexStatusRequest(final String taskId) {
     return when(openSearchClient.getRichOpenSearchClient().task().taskWithRetries(taskId));
   }
 
-  @SneakyThrows
   private void mockCountResponseFromIndex(final String indexName, final long count) {
     when(openSearchClient.countWithoutPrefix(matches(indexName))).thenAnswer(a -> count);
   }

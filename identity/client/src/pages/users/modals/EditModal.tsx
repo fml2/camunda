@@ -11,28 +11,21 @@ import { useApiCall } from "src/utility/api";
 import useTranslate from "src/utility/localization";
 import { FormModal, UseEntityModalProps } from "src/components/modal";
 import { updateUser, User } from "src/utility/api/users";
+import { isValidEmail } from "./isValidEmail";
 
 const EditModal: FC<UseEntityModalProps<User>> = ({
   open,
   onClose,
   onSuccess,
-  entity: { id, email: currentEmail, name: currentName, username },
+  entity,
 }) => {
   const { t } = useTranslate();
-  const [apiCall, { loading, namedErrors }] = useApiCall(updateUser);
-  const [name, setName] = useState(currentName);
-  const [email, setEmail] = useState(currentEmail);
-  const [password, setPassword] = useState("");
+  const [callUpdateUser, { loading }] = useApiCall(updateUser);
+  const [user, setUser] = useState<User>(entity);
+  const [emailValid, setEmailValid] = useState(true);
 
   const handleSubmit = async () => {
-    const { success } = await apiCall({
-      id,
-      name,
-      email,
-      username,
-      password,
-    });
-
+    const { success } = await callUpdateUser(user);
     if (success) {
       onSuccess();
     }
@@ -49,33 +42,31 @@ const EditModal: FC<UseEntityModalProps<User>> = ({
       confirmLabel={t("Update user")}
     >
       <TextField
+        label={t("Username")}
+        value={user.username}
+        placeholder={t("Enter username")}
+        readOnly
+      />
+      <TextField
         label={t("Name")}
-        value={name}
-        placeholder={t("Name")}
-        onChange={setName}
-        errors={namedErrors?.name}
+        value={user.name}
+        placeholder={t("Enter name")}
+        onChange={(name) => setUser({ ...user, name })}
         autoFocus
       />
       <TextField
         label={t("Email")}
-        value={email}
-        placeholder={t("Email")}
-        onChange={setEmail}
-        errors={namedErrors?.email}
+        value={user.email}
+        placeholder={t("Enter email address")}
+        onChange={(email) => setUser({ ...user, email })}
+        onBlur={() => setEmailValid(isValidEmail(user.email))}
+        errors={!emailValid ? [t("Please enter a valid email")] : []}
       />
       <TextField
-        label={t("Username")}
-        value={username}
-        placeholder={t("Username")}
-        errors={namedErrors?.username}
-        disabled
-      />
-      <TextField
-        label={t("Password")}
-        value={password}
-        placeholder={t("Password")}
-        onChange={setPassword}
-        errors={namedErrors?.password}
+        label={t("New Password")}
+        value={user.password}
+        placeholder={t("Enter new password")}
+        onChange={(password) => setUser({ ...user, password })}
         type="password"
         helperText={t("Leave empty to keep current password")}
       />

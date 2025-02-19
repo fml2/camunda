@@ -12,11 +12,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
+import io.camunda.security.configuration.MultiTenancyConfiguration;
 import io.camunda.service.ResourceServices;
 import io.camunda.service.ResourceServices.DeployResourcesRequest;
 import io.camunda.service.ResourceServices.ResourceDeletionRequest;
-import io.camunda.zeebe.gateway.impl.configuration.MultiTenancyCfg;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
 import io.camunda.zeebe.protocol.impl.record.value.deployment.DeploymentRecord;
 import io.camunda.zeebe.protocol.impl.record.value.resource.ResourceDeletionRecord;
@@ -40,7 +40,7 @@ public class ResourceControllerTest extends RestControllerTest {
   static final String DELETE_RESOURCE_ENDPOINT = RESOURCES_BASE_URL + "/resources/%s/deletion";
 
   @MockBean ResourceServices resourceServices;
-  @MockBean MultiTenancyCfg multiTenancyCfg;
+  @MockBean MultiTenancyConfiguration multiTenancyCfg;
   @Captor ArgumentCaptor<DeployResourcesRequest> deployRequestCaptor;
   @Captor ArgumentCaptor<ResourceDeletionRequest> deleteRequestCaptor;
 
@@ -95,13 +95,13 @@ public class ResourceControllerTest extends RestControllerTest {
         .json(
             """
                  {
-                    "deploymentKey":123,
+                    "deploymentKey":"123",
                     "deployments":[
                        {
                           "processDefinition":{
                              "processDefinitionId":"processId",
                              "processDefinitionVersion":1,
-                             "processDefinitionKey":123456,
+                             "processDefinitionKey":"123456",
                              "resourceName":"process.bpmn",
                              "tenantId":"<default>"
                           }
@@ -158,13 +158,13 @@ public class ResourceControllerTest extends RestControllerTest {
         .json(
             """
                  {
-                    "deploymentKey":123,
+                    "deploymentKey":"123",
                     "deployments":[
                        {
                           "processDefinition":{
                              "processDefinitionId":"processId",
                              "processDefinitionVersion":1,
-                             "processDefinitionKey":123456,
+                             "processDefinitionKey":"123456",
                              "resourceName":"process.bpmn",
                              "tenantId":"<default>"
                           }
@@ -226,13 +226,13 @@ public class ResourceControllerTest extends RestControllerTest {
         .json(
             """
                  {
-                    "deploymentKey":123,
+                    "deploymentKey":"123",
                     "deployments":[
                        {
                           "processDefinition":{
                              "processDefinitionId":"processId",
                              "processDefinitionVersion":1,
-                             "processDefinitionKey":123456,
+                             "processDefinitionKey":"123456",
                              "resourceName":"process.bpmn",
                              "tenantId":"tenantId"
                           }
@@ -318,13 +318,13 @@ public class ResourceControllerTest extends RestControllerTest {
         .json(
             """
                  {
-                    "deploymentKey":123,
+                    "deploymentKey":"123",
                     "deployments":[
                        {
                           "processDefinition":{
                              "processDefinitionId":"processId",
                              "processDefinitionVersion":1,
-                             "processDefinitionKey":123456,
+                             "processDefinitionKey":"123456",
                              "resourceName":"process.bpmn",
                              "tenantId":"<default>"
                           }
@@ -333,7 +333,7 @@ public class ResourceControllerTest extends RestControllerTest {
                           "processDefinition":{
                              "processDefinitionId":"secondProcessId",
                              "processDefinitionVersion":1,
-                             "processDefinitionKey":7890123,
+                             "processDefinitionKey":"7890123",
                              "resourceName":"second.bpmn",
                              "tenantId":"<default>"
                           }
@@ -342,7 +342,7 @@ public class ResourceControllerTest extends RestControllerTest {
                           "form":{
                              "formId":"formId",
                              "version":1,
-                             "formKey":123456,
+                             "formKey":"123456",
                              "resourceName":"process.bpmn",
                              "tenantId":"<default>"
                           }

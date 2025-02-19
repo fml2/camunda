@@ -9,7 +9,6 @@ package io.camunda.optimize.service.db.reader;
 
 import static io.camunda.optimize.util.LogUtil.sanitizeLogMessage;
 
-import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import com.nimbusds.oauth2.sdk.util.CollectionUtils;
 import io.camunda.optimize.dto.optimize.query.variable.DefinitionVariableLabelsDto;
 import io.camunda.optimize.dto.optimize.query.variable.ProcessToQueryDto;
@@ -23,23 +22,26 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import lombok.AllArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.stereotype.Component;
 
-@AllArgsConstructor
 @Component
-@Slf4j
 public class ProcessVariableReader {
 
+  private static final Logger LOG = org.slf4j.LoggerFactory.getLogger(ProcessVariableReader.class);
   private final VariableLabelReader variableLabelReader;
   private final VariableRepository variableRepository;
 
+  public ProcessVariableReader(
+      final VariableLabelReader variableLabelReader, final VariableRepository variableRepository) {
+    this.variableLabelReader = variableLabelReader;
+    this.variableRepository = variableRepository;
+  }
+
   public List<ProcessVariableNameResponseDto> getVariableNames(
       final ProcessVariableNameRequestDto variableNameRequest) {
-    Map<String, List<String>> logEntries = new HashMap<>();
+    final Map<String, List<String>> logEntries = new HashMap<>();
     variableNameRequest
         .getProcessesToQuery()
         .forEach(
@@ -49,7 +51,7 @@ public class ProcessVariableReader {
                     processToQuery.getProcessDefinitionVersions().stream()
                         .map(LogUtil::sanitizeLogMessage)
                         .collect(Collectors.toList())));
-    log.debug("Fetching variable names for {definitionKey=[versions]}: [{}]", logEntries);
+    LOG.debug("Fetching variable names for {definitionKey=[versions]}: [{}]", logEntries);
 
     final List<ProcessToQueryDto> validNameRequests =
         variableNameRequest.getProcessesToQuery().stream()
@@ -57,31 +59,23 @@ public class ProcessVariableReader {
             .filter(request -> !CollectionUtils.isEmpty(request.getProcessDefinitionVersions()))
             .toList();
     if (validNameRequests.isEmpty()) {
-      log.debug(
+      LOG.debug(
           "Cannot fetch variable names as no valid variable requests are provided. "
               + "Variable requests must include definition key and version.");
       return Collections.emptyList();
     }
 
-    List<String> processDefinitionKeys =
+    final List<String> processDefinitionKeys =
         validNameRequests.stream()
             .map(ProcessToQueryDto::getProcessDefinitionKey)
             .distinct()
             .toList();
 
-    Map<String, DefinitionVariableLabelsDto> definitionLabelsDtos =
+    final Map<String, DefinitionVariableLabelsDto> definitionLabelsDtos =
         variableLabelReader.getVariableLabelsByKey(processDefinitionKeys);
 
     return variableRepository.getVariableNames(
         variableNameRequest, validNameRequests, processDefinitionKeys, definitionLabelsDtos);
-  }
-
-  public List<ProcessVariableNameResponseDto> getVariableNamesForInstancesMatchingQuery(
-      final List<String> processDefinitionKeysToTarget,
-      final Supplier<BoolQuery.Builder> baseQuerySupplier,
-      final Map<String, DefinitionVariableLabelsDto> definitionLabelsDtos) {
-    return variableRepository.getVariableNamesForInstancesMatchingQuery(
-        processDefinitionKeysToTarget, baseQuerySupplier, definitionLabelsDtos);
   }
 
   public List<String> getVariableValues(final ProcessVariableValuesQueryDto requestDto) {
@@ -90,11 +84,11 @@ public class ProcessVariableReader {
             .filter(source -> !CollectionUtils.isEmpty(source.getProcessDefinitionVersions()))
             .collect(Collectors.toList());
     if (processVariableSources.isEmpty()) {
-      log.debug("Cannot fetch variable values for process definition with missing versions.");
+      LOG.debug("Cannot fetch variable values for process definition with missing versions.");
       return Collections.emptyList();
     }
 
-    log.debug("Fetching input variable values from sources [{}]", processVariableSources);
+    LOG.debug("Fetching input variable values from sources [{}]", processVariableSources);
 
     return variableRepository.getVariableValues(requestDto, processVariableSources);
   }

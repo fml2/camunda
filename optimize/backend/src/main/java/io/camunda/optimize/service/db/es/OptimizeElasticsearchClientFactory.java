@@ -7,7 +7,6 @@
  */
 package io.camunda.optimize.service.db.es;
 
-import static io.camunda.optimize.service.util.DatabaseVersionChecker.checkESVersionSupport;
 import static io.camunda.optimize.service.util.mapper.ObjectMapperFactory.OPTIMIZE_MAPPER;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
@@ -21,15 +20,16 @@ import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCon
 import io.camunda.optimize.upgrade.es.ElasticsearchClientBuilder;
 import io.camunda.search.connect.plugin.PluginRepository;
 import java.io.IOException;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 
-@Slf4j
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Conditional(ElasticSearchCondition.class)
-public class OptimizeElasticsearchClientFactory {
+public final class OptimizeElasticsearchClientFactory {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(OptimizeElasticsearchClientFactory.class);
+
+  private OptimizeElasticsearchClientFactory() {}
 
   public static OptimizeElasticsearchClient create(
       final ConfigurationService configurationService,
@@ -38,14 +38,24 @@ public class OptimizeElasticsearchClientFactory {
       final BackoffCalculator backoffCalculator,
       final PluginRepository pluginRepository)
       throws IOException {
-    log.info("Initializing Elasticsearch rest client...");
+    LOG.info("Initializing Elasticsearch rest client...");
     final TransportOptionsProvider transportOptionsProvider =
         new TransportOptionsProvider(configurationService);
     final ElasticsearchClient build =
         ElasticsearchClientBuilder.build(configurationService, OPTIMIZE_MAPPER, pluginRepository);
 
-    waitForElasticsearch(build, backoffCalculator, transportOptionsProvider.getTransportOptions());
-    log.info("Elasticsearch client has successfully been started");
+    final boolean clusterTaskCheckingEnabled =
+        configurationService
+            .getElasticSearchConfiguration()
+            .getConnection()
+            .isClusterTaskCheckingEnabled();
+    if (clusterTaskCheckingEnabled) {
+      waitForElasticsearch(
+          build, backoffCalculator, transportOptionsProvider.getTransportOptions());
+      LOG.info("Elasticsearch client has successfully been started");
+    } else {
+      LOG.info("Cluster task checking disabled, not waiting for Elasticsearch to start");
+    }
 
     final OptimizeElasticsearchClient prefixedClient =
         new OptimizeElasticsearchClient(
@@ -56,7 +66,15 @@ public class OptimizeElasticsearchClientFactory {
             transportOptionsProvider);
 
     elasticSearchSchemaManager.validateDatabaseMetadata(prefixedClient);
-    elasticSearchSchemaManager.initializeSchema(prefixedClient);
+
+    final boolean initSchemaEnabled =
+        configurationService.getElasticSearchConfiguration().getConnection().isInitSchemaEnabled();
+    if (initSchemaEnabled) {
+      elasticSearchSchemaManager.initializeSchema(prefixedClient);
+    } else {
+      LOG.info("Schema initialization disabled, skipping");
+    }
+
     return prefixedClient;
   }
 
@@ -75,25 +93,24 @@ public class OptimizeElasticsearchClientFactory {
         final String errorMessage =
             "Can't connect to any Elasticsearch node. Please check the connection!";
         if (connectionAttempts < 10) {
-          log.warn(errorMessage);
+          LOG.warn(errorMessage);
         } else {
-          log.error(errorMessage, e);
+          LOG.error(errorMessage, e);
         }
       } finally {
         if (!isConnected) {
           final long sleepTime = backoffCalculator.calculateSleepTime();
-          log.info(
+          LOG.info(
               "No Elasticsearch nodes available, waiting [{}] ms to retry connecting", sleepTime);
           try {
             Thread.sleep(sleepTime);
           } catch (final InterruptedException e) {
-            log.warn("Got interrupted while waiting to retry connecting to Elasticsearch.", e);
+            LOG.warn("Got interrupted while waiting to retry connecting to Elasticsearch.", e);
             Thread.currentThread().interrupt();
           }
         }
       }
     }
-    checkESVersionSupport(esClient, requestOptions);
   }
 
   private static int getNumberOfClusterNodes(

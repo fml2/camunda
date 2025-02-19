@@ -30,12 +30,12 @@ import io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
 import org.apache.commons.text.StringSubstitutor;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class ProcessPartQueryUtilES extends AbstractProcessPartQueryUtil {
+public final class ProcessPartQueryUtilES extends AbstractProcessPartQueryUtil {
+
+  private ProcessPartQueryUtilES() {}
+
   public static Map<String, Aggregate> getProcessPartAggregations(
       final Map<String, Aggregate> aggs) {
     return aggs.get(NESTED_AGGREGATION).nested().aggregations();
@@ -48,7 +48,7 @@ public class ProcessPartQueryUtilES extends AbstractProcessPartQueryUtil {
         nested.aggregations().get(getScriptAggregationName(aggregationType)).scriptedMetric();
     try {
       return scriptedMetric.value().to(Double.class);
-    } catch (IllegalStateException i) {
+    } catch (final IllegalStateException i) {
       return NO_DATA_AVAILABLE_RESULT;
     }
   }
@@ -89,7 +89,7 @@ public class ProcessPartQueryUtilES extends AbstractProcessPartQueryUtil {
           params.put("endFlowNodeId", JsonData.of(endFlowNodeId));
           params.put("aggregationType", JsonData.of(aggregationType.getType().getId()));
 
-          String scriptAggregationName = getScriptAggregationName(aggregationType);
+          final String scriptAggregationName = getScriptAggregationName(aggregationType);
           final Aggregation findStartAndEndDatesForEvents =
               scriptedMetric(
                   s ->

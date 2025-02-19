@@ -12,10 +12,24 @@ import {
   mockBatchOperations,
   mockGroupedProcesses,
   mockProcessInstances,
-  mockStatistics,
   mockResponses,
+  mockStatistics,
 } from '../mocks/processes.mocks';
 import {open} from 'modules/mocks/diagrams';
+import {URL_API_PATTERN} from '../constants';
+import {clientConfigMock} from '../mocks/clientConfig';
+
+test.beforeEach(async ({context}) => {
+  await context.route('**/client-config.js', (route) =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'text/javascript;charset=UTF-8',
+      },
+      body: clientConfigMock,
+    }),
+  );
+});
 
 test.describe('migration view', () => {
   for (const theme of ['light', 'dark']) {
@@ -36,7 +50,7 @@ test.describe('migration view', () => {
       }, theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           groupedProcesses: mockGroupedProcesses,
           batchOperations: mockBatchOperations,

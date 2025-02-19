@@ -10,10 +10,11 @@ package io.camunda.search.clients;
 import io.camunda.search.entities.VariableEntity;
 import io.camunda.search.query.SearchQueryResult;
 import io.camunda.search.query.VariableQuery;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.SecurityContext;
 
-public interface VariableSearchClient extends AutoCloseable {
+public interface VariableSearchClient {
 
-  SearchQueryResult<VariableEntity> searchVariables(
-      VariableQuery filter, Authentication authentication);
+  SearchQueryResult<VariableEntity> searchVariables(VariableQuery filter);
+
+  VariableSearchClient withSecurityContext(SecurityContext securityContext);
 }

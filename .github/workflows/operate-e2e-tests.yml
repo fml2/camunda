@@ -14,6 +14,7 @@ on:
       - "distro/**"
       - "operate.Dockerfile"
       - "operate/**"
+      - "zeebe/exporters/camunda-exporter/**"
       - "parent/*"
       - "pom.xml"
   pull_request:
@@ -25,6 +26,7 @@ on:
       - "distro/**"
       - "operate.Dockerfile"
       - "operate/**"
+      - "zeebe/exporters/camunda-exporter/**"
       - "parent/*"
       - "pom.xml"
 
@@ -39,7 +41,7 @@ jobs:
     runs-on: gcp-core-4-default
     services:
       elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:8.15.2
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.17.1
         env:
           discovery.type: single-node
           cluster.name: docker-cluster
@@ -49,16 +51,6 @@ jobs:
         ports:
           - 9200:9200
           - 9300:9300
-      zeebe:
-        image: camunda/zeebe:SNAPSHOT
-        env:
-          JAVA_TOOL_OPTIONS: "-Xms512m -Xmx512m"
-          ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME: io.camunda.zeebe.exporter.ElasticsearchExporter
-          ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL: http://elasticsearch:9200
-          ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_SIZE: 1
-          ZEEBE_BROKER_BACKPRESSURE_ENABLED: false
-        ports:
-          - 26500:26500
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -74,7 +66,9 @@ jobs:
             secret/data/github.com/organizations/camunda NEXUS_USR;
             secret/data/github.com/organizations/camunda NEXUS_PSW;
       - name: Build frontend
-        uses: ./.github/actions/build-operate-fe
+        uses: ./.github/actions/build-frontend
+        with:
+          directory: ./operate/client
       - name: Add Yarn binaries to Path
         working-directory: ./operate/client
         run: |
@@ -89,12 +83,13 @@ jobs:
           distribution: "adopt"
           java-version: "21"
       - name: Setup Maven
-        uses: stCarolas/setup-maven@v4.5
+        uses: ./.github/actions/setup-maven-dist
         with:
           maven-version: "3.9.6"
+          set-mvnw: true
       # Use CI Nexus as co-located pull-through cache for Maven artifacts via ~/.m2/settings.xml
       - name: "Create settings.xml"
-        uses: s4u/maven-settings-action@v3.0.0
+        uses: s4u/maven-settings-action@v3.1.0
         with:
           githubServer: false
           servers: |
@@ -107,9 +102,12 @@ jobs:
       - name: Build backend
         # Currently, the e2e environment of operate conflicts with the optimize build. For the moment,
         # we're excluding optimize from the build, not to impact this operate's workflow.
-        run: mvn clean install -T1C -DskipChecks -P -docker,skipFrontendBuild -DskipTests=true -B -DskipRemoteStaging=true -Dmaven.deploy.skip=true
+        run: ./mvnw clean install -T1C -DskipChecks -P -docker,skipFrontendBuild -DskipTests=true -B -DskipRemoteStaging=true -Dmaven.deploy.skip=true
       - name: Start Operate
-        run: mvn -q -B spring-boot:start -pl dist -Dspring-boot.run.fork=true -Dspring-boot.run.main-class=io.camunda.application.StandaloneOperate
+        run: >
+          ./mvnw -q -B spring-boot:start -pl dist -Dspring-boot.run.fork=true
+          -Dspring-boot.run.main-class=io.camunda.application.StandaloneCamunda
+          -Dspring-boot.run.jvmArguments="-Dspring.profiles.active=operate,consolidated-auth,broker -Dzeebe.broker.exporters.camundaexporter.classname=io.camunda.exporter.CamundaExporter -Dzeebe.broker.exporters.camundaexporter.args.connect.url=http://localhost:9200 -Dzeebe.broker.exporters.camundaexporter.args.bulk.size=100 -Dzeebe.broker.backpressure.enabled=false -Dzeebe.broker.exporters.camundaexporter.args.index.shouldWaitForImporters=false"
         env:
           CAMUNDA_OPERATE_CSRF_PREVENTION_ENABLED: false
       - name: Run tests
@@ -117,12 +115,28 @@ jobs:
         run: yarn run test:e2e:ci
         env:
           ZEEBE_GATEWAY_ADDRESS: localhost:26500
+          ZEEBE_REST_GATEWAY_ADDRESS: http://localhost:8080
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Playwright report
           path: operate/client/playwright-report/
           retention-days: 30
+
+      - name: Collect docker logs on failure
+        if: failure()
+        uses: jwalton/gh-docker-logs@v2
+        with:
+          dest: "./logs"
+      - name: Tar logs
+        if: failure()
+        run: tar cvzf ./logs.tgz ./logs
+      - name: Upload logs to GitHub
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs.tgz
+          path: ./logs.tgz
 
       - name: Observe build status
         if: always()

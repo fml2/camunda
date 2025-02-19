@@ -26,41 +26,48 @@ import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCon
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
-@Slf4j
 @Conditional(ElasticSearchCondition.class)
 public class CollectionReaderES implements CollectionReader {
 
+  private static final Logger LOG = org.slf4j.LoggerFactory.getLogger(CollectionReaderES.class);
   private final OptimizeElasticsearchClient esClient;
   private final ConfigurationService configurationService;
   private final ObjectMapper objectMapper;
 
+  public CollectionReaderES(
+      final OptimizeElasticsearchClient esClient,
+      final ConfigurationService configurationService,
+      final ObjectMapper objectMapper) {
+    this.esClient = esClient;
+    this.configurationService = configurationService;
+    this.objectMapper = objectMapper;
+  }
+
   @Override
-  public Optional<CollectionDefinitionDto> getCollection(String collectionId) {
-    log.debug("Fetching collection with id [{}]", collectionId);
-    GetRequest getRequest =
+  public Optional<CollectionDefinitionDto> getCollection(final String collectionId) {
+    LOG.debug("Fetching collection with id [{}]", collectionId);
+    final GetRequest getRequest =
         OptimizeGetRequestBuilderES.of(
             b -> b.optimizeIndex(esClient, COLLECTION_INDEX_NAME).id(collectionId));
     try {
       return Optional.ofNullable(esClient.get(getRequest, CollectionDefinitionDto.class).source());
-    } catch (IOException e) {
-      String reason = String.format("Could not fetch collection with id [%s]", collectionId);
-      log.error(reason, e);
+    } catch (final IOException e) {
+      final String reason = String.format("Could not fetch collection with id [%s]", collectionId);
+      LOG.error(reason, e);
       throw new OptimizeRuntimeException(reason, e);
     }
   }
 
   @Override
   public List<CollectionDefinitionDto> getAllCollections() {
-    log.debug("Fetching all available collections");
+    LOG.debug("Fetching all available collections");
 
-    SearchRequest searchRequest =
+    final SearchRequest searchRequest =
         OptimizeSearchRequestBuilderES.of(
             b ->
                 b.optimizeIndex(esClient, COLLECTION_INDEX_NAME)
@@ -80,11 +87,11 @@ public class CollectionReaderES implements CollectionReader {
                                         .getScrollTimeoutInSeconds()
                                     + "s")));
 
-    SearchResponse<CollectionDefinitionDto> scrollResp;
+    final SearchResponse<CollectionDefinitionDto> scrollResp;
     try {
       scrollResp = esClient.search(searchRequest, CollectionDefinitionDto.class);
-    } catch (IOException e) {
-      log.error("Was not able to retrieve collections!", e);
+    } catch (final IOException e) {
+      LOG.error("Was not able to retrieve collections!", e);
       throw new OptimizeRuntimeException("Was not able to retrieve collections!", e);
     }
 

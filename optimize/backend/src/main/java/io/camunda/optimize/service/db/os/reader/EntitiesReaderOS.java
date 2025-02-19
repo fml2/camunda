@@ -13,8 +13,8 @@ import static io.camunda.optimize.service.db.DatabaseConstants.DASHBOARD_INDEX_N
 import static io.camunda.optimize.service.db.DatabaseConstants.LIST_FETCH_LIMIT;
 import static io.camunda.optimize.service.db.DatabaseConstants.SINGLE_DECISION_REPORT_INDEX_NAME;
 import static io.camunda.optimize.service.db.DatabaseConstants.SINGLE_PROCESS_REPORT_INDEX_NAME;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.terms;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.terms;
 import static io.camunda.optimize.service.db.schema.index.DashboardIndex.INSTANT_PREVIEW_DASHBOARD;
 import static io.camunda.optimize.service.db.schema.index.DashboardIndex.MANAGEMENT_DASHBOARD;
 import static io.camunda.optimize.service.db.schema.index.report.AbstractReportIndex.COLLECTION_ID;
@@ -30,11 +30,12 @@ import io.camunda.optimize.dto.optimize.query.dashboard.DashboardDefinitionRestD
 import io.camunda.optimize.dto.optimize.query.entity.EntityNameRequestDto;
 import io.camunda.optimize.dto.optimize.query.entity.EntityNameResponseDto;
 import io.camunda.optimize.dto.optimize.query.entity.EntityType;
+import io.camunda.optimize.rest.exceptions.BadRequestException;
 import io.camunda.optimize.service.LocalizationService;
 import io.camunda.optimize.service.db.os.OptimizeOpenSearchClient;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.RequestDSL;
-import io.camunda.optimize.service.db.os.externalcode.client.sync.OpenSearchDocumentOperations;
+import io.camunda.optimize.service.db.os.client.dsl.QueryDSL;
+import io.camunda.optimize.service.db.os.client.dsl.RequestDSL;
+import io.camunda.optimize.service.db.os.client.sync.OpenSearchDocumentOperations;
 import io.camunda.optimize.service.db.os.schema.index.DashboardIndexOS;
 import io.camunda.optimize.service.db.os.schema.index.report.CombinedReportIndexOS;
 import io.camunda.optimize.service.db.os.schema.index.report.SingleDecisionReportIndexOS;
@@ -53,8 +54,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
 import org.opensearch.client.opensearch._types.aggregations.FilterAggregate;
@@ -69,19 +68,30 @@ import org.opensearch.client.opensearch.core.mget.MultiGetResponseItem;
 import org.opensearch.client.opensearch.core.search.Hit;
 import org.opensearch.client.opensearch.core.search.SourceConfig;
 import org.opensearch.client.opensearch.core.search.SourceFilter;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
-@Slf4j
 @Conditional(OpenSearchCondition.class)
 public class EntitiesReaderOS implements EntitiesReader {
 
+  private static final Logger LOG = org.slf4j.LoggerFactory.getLogger(EntitiesReaderOS.class);
   private final OptimizeOpenSearchClient osClient;
   private final ConfigurationService configurationService;
   private final OptimizeIndexNameService optimizeIndexNameService;
   private final LocalizationService localizationService;
+
+  public EntitiesReaderOS(
+      final OptimizeOpenSearchClient osClient,
+      final ConfigurationService configurationService,
+      final OptimizeIndexNameService optimizeIndexNameService,
+      final LocalizationService localizationService) {
+    this.osClient = osClient;
+    this.configurationService = configurationService;
+    this.optimizeIndexNameService = optimizeIndexNameService;
+    this.localizationService = localizationService;
+  }
 
   @Override
   public List<CollectionEntity> getAllPrivateEntities() {
@@ -90,7 +100,7 @@ public class EntitiesReaderOS implements EntitiesReader {
 
   @Override
   public List<CollectionEntity> getAllPrivateEntitiesForOwnerId(final String ownerId) {
-    log.debug("Fetching all available entities for user [{}]", ownerId);
+    LOG.debug("Fetching all available entities for user [{}]", ownerId);
 
     final BoolQuery.Builder query =
         new BoolQuery.Builder()
@@ -147,7 +157,7 @@ public class EntitiesReaderOS implements EntitiesReader {
     try {
       scrollResp = osClient.retrieveAllScrollResults(requestBuilder, CollectionEntity.class);
     } catch (final IOException e) {
-      log.error("Was not able to retrieve private entities!", e);
+      LOG.error("Was not able to retrieve private entities!", e);
       throw new OptimizeRuntimeException("Was not able to retrieve private entities!", e);
     }
 
@@ -159,7 +169,7 @@ public class EntitiesReaderOS implements EntitiesReader {
       final List<? extends BaseCollectionDefinitionDto<?>> collections) {
     final List<String> collectionIds =
         collections.stream().map(BaseCollectionDefinitionDto::getId).toList();
-    log.debug("Counting all available entities for collection ids [{}]", collectionIds);
+    LOG.debug("Counting all available entities for collection ids [{}]", collectionIds);
 
     if (collections.isEmpty()) {
       return new HashMap<>();
@@ -196,7 +206,7 @@ public class EntitiesReaderOS implements EntitiesReader {
 
   @Override
   public List<CollectionEntity> getAllEntitiesForCollection(final String collectionId) {
-    log.debug("Fetching all available entities for collection [{}]", collectionId);
+    LOG.debug("Fetching all available entities for collection [{}]", collectionId);
     final SearchRequest.Builder requestBuilder =
         createReportAndDashboardSearchRequest()
             .size(LIST_FETCH_LIMIT)
@@ -212,7 +222,7 @@ public class EntitiesReaderOS implements EntitiesReader {
     try {
       scrollResp = osClient.retrieveAllScrollResults(requestBuilder, CollectionEntity.class);
     } catch (final IOException e) {
-      log.error("Was not able to retrieve collection entities!", e);
+      LOG.error("Was not able to retrieve collection entities!", e);
       throw new OptimizeRuntimeException("Was not able to retrieve entities!", e);
     }
 
@@ -222,10 +232,16 @@ public class EntitiesReaderOS implements EntitiesReader {
   @Override
   public Optional<EntityNameResponseDto> getEntityNames(
       final EntityNameRequestDto requestDto, final String locale) {
-    log.debug(
+    LOG.debug(
         String.format("Performing get entity names search request %s", requestDto.toString()));
     final MgetResponse<CollectionEntity> multiGetItemResponse =
         runGetEntityNamesRequest(requestDto);
+
+    final boolean atLeastOneResponseExistsForMultiGet =
+        multiGetItemResponse.docs().stream().anyMatch(doc -> doc.result().found());
+    if (!atLeastOneResponseExistsForMultiGet) {
+      return Optional.empty();
+    }
 
     final EntityNameResponseDto result = new EntityNameResponseDto();
     for (final MultiGetResponseItem<CollectionEntity> itemResponse : multiGetItemResponse.docs()) {
@@ -294,6 +310,14 @@ public class EntitiesReaderOS implements EntitiesReader {
     indexesToEntitiesId.put(COMBINED_REPORT_INDEX_NAME, requestDto.getReportId());
     indexesToEntitiesId.put(DASHBOARD_INDEX_NAME, requestDto.getDashboardId());
     indexesToEntitiesId.put(COLLECTION_INDEX_NAME, requestDto.getCollectionId());
+
+    final boolean isEmpty =
+        indexesToEntitiesId.entrySet().stream().noneMatch(e -> e.getValue() != null);
+
+    if (isEmpty) {
+      throw new BadRequestException("No ids for entity name request provided");
+    }
+
     final String errorMessage =
         String.format("Could not get entity names search request %s", requestDto);
     return osClient.mget(CollectionEntity.class, errorMessage, indexesToEntitiesId);

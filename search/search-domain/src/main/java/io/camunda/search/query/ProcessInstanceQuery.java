@@ -11,7 +11,6 @@ import io.camunda.search.filter.FilterBuilders;
 import io.camunda.search.filter.ProcessInstanceFilter;
 import io.camunda.search.page.SearchQueryPage;
 import io.camunda.search.result.ProcessInstanceQueryResultConfig;
-import io.camunda.search.result.QueryResultConfig;
 import io.camunda.search.result.QueryResultConfigBuilders;
 import io.camunda.search.sort.ProcessInstanceSort;
 import io.camunda.search.sort.SortOptionBuilders;
@@ -23,7 +22,7 @@ public record ProcessInstanceQuery(
     ProcessInstanceFilter filter,
     ProcessInstanceSort sort,
     SearchQueryPage page,
-    QueryResultConfig resultConfig)
+    ProcessInstanceQueryResultConfig resultConfig)
     implements TypedSearchQuery<ProcessInstanceFilter, ProcessInstanceSort> {
 
   public static ProcessInstanceQuery of(
@@ -44,19 +43,21 @@ public record ProcessInstanceQuery(
     private ProcessInstanceSort sort;
     private ProcessInstanceQueryResultConfig resultConfig;
 
+    @Override
     public Builder filter(final ProcessInstanceFilter value) {
       filter = value;
+      return this;
+    }
+
+    @Override
+    public Builder sort(final ProcessInstanceSort value) {
+      sort = value;
       return this;
     }
 
     public Builder filter(
         final Function<ProcessInstanceFilter.Builder, ObjectBuilder<ProcessInstanceFilter>> fn) {
       return filter(FilterBuilders.processInstance(fn));
-    }
-
-    public Builder sort(final ProcessInstanceSort value) {
-      sort = value;
-      return this;
     }
 
     public Builder sort(

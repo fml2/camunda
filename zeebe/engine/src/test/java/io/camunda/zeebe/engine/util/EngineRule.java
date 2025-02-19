@@ -10,6 +10,7 @@ package io.camunda.zeebe.engine.util;
 import static io.camunda.zeebe.test.util.record.RecordingExporter.jobRecords;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.configuration.SecurityConfiguration;
 import io.camunda.zeebe.db.DbKey;
 import io.camunda.zeebe.db.DbValue;
 import io.camunda.zeebe.engine.processing.EngineProcessors;
@@ -23,14 +24,19 @@ import io.camunda.zeebe.engine.util.client.AuthorizationClient;
 import io.camunda.zeebe.engine.util.client.ClockClient;
 import io.camunda.zeebe.engine.util.client.DecisionEvaluationClient;
 import io.camunda.zeebe.engine.util.client.DeploymentClient;
+import io.camunda.zeebe.engine.util.client.GroupClient;
+import io.camunda.zeebe.engine.util.client.IdentitySetupClient;
 import io.camunda.zeebe.engine.util.client.IncidentClient;
 import io.camunda.zeebe.engine.util.client.JobActivationClient;
 import io.camunda.zeebe.engine.util.client.JobClient;
+import io.camunda.zeebe.engine.util.client.MappingClient;
 import io.camunda.zeebe.engine.util.client.MessageCorrelationClient;
 import io.camunda.zeebe.engine.util.client.ProcessInstanceClient;
 import io.camunda.zeebe.engine.util.client.PublishMessageClient;
 import io.camunda.zeebe.engine.util.client.ResourceDeletionClient;
+import io.camunda.zeebe.engine.util.client.RoleClient;
 import io.camunda.zeebe.engine.util.client.SignalClient;
+import io.camunda.zeebe.engine.util.client.TenantClient;
 import io.camunda.zeebe.engine.util.client.UserClient;
 import io.camunda.zeebe.engine.util.client.UserTaskClient;
 import io.camunda.zeebe.engine.util.client.VariableClient;
@@ -41,9 +47,12 @@ import io.camunda.zeebe.protocol.Protocol;
 import io.camunda.zeebe.protocol.ZbColumnFamilies;
 import io.camunda.zeebe.protocol.impl.encoding.MsgPackConverter;
 import io.camunda.zeebe.protocol.record.Record;
+import io.camunda.zeebe.protocol.record.intent.CommandDistributionIntent;
+import io.camunda.zeebe.protocol.record.intent.IdentitySetupIntent;
 import io.camunda.zeebe.protocol.record.intent.JobIntent;
 import io.camunda.zeebe.protocol.record.value.JobRecordValue;
 import io.camunda.zeebe.protocol.record.value.TenantOwned;
+import io.camunda.zeebe.scheduler.ActorScheduler;
 import io.camunda.zeebe.scheduler.clock.ControlledActorClock;
 import io.camunda.zeebe.stream.api.CommandResponseWriter;
 import io.camunda.zeebe.stream.api.StreamClock;
@@ -57,6 +66,7 @@ import io.camunda.zeebe.test.util.record.RecordingExporter;
 import io.camunda.zeebe.test.util.record.RecordingExporterTestWatcher;
 import io.camunda.zeebe.util.FeatureFlags;
 import io.camunda.zeebe.util.buffer.BufferUtil;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -84,6 +94,7 @@ public final class EngineRule extends ExternalResource {
   private final RecordingExporterTestWatcher recordingExporterTestWatcher =
       new RecordingExporterTestWatcher();
   private final int partitionCount;
+  private boolean awaitIdentitySetup = true;
 
   private Consumer<TypedRecord> onProcessedCallback = record -> {};
   private Consumer<LoggedEvent> onSkippedCallback = record -> {};
@@ -93,6 +104,7 @@ public final class EngineRule extends ExternalResource {
 
   private FeatureFlags featureFlags = FeatureFlags.createDefaultForTests();
   private ArrayList<TestInterPartitionCommandSender> interPartitionCommandSenders;
+  private Consumer<SecurityConfiguration> securityConfigModifier = cfg -> {};
 
   private EngineRule(final int partitionCount) {
     this(partitionCount, null);
@@ -127,6 +139,9 @@ public final class EngineRule extends ExternalResource {
   @Override
   protected void before() {
     start();
+    if (awaitIdentitySetup) {
+      awaitIdentitySetup();
+    }
   }
 
   public void start() {
@@ -139,6 +154,11 @@ public final class EngineRule extends ExternalResource {
 
   public void stop() {
     forEachPartition(environmentRule::closeStreamProcessor);
+  }
+
+  public EngineRule withoutAwaitingIdentitySetup() {
+    awaitIdentitySetup = false;
+    return this;
   }
 
   public EngineRule withJobStreamer(final JobStreamer jobStreamer) {
@@ -166,6 +186,11 @@ public final class EngineRule extends ExternalResource {
     return this;
   }
 
+  public EngineRule withSecurityConfig(final Consumer<SecurityConfiguration> modifier) {
+    securityConfigModifier = securityConfigModifier.andThen(modifier);
+    return this;
+  }
+
   private void startProcessors(final StreamProcessorMode mode, final boolean awaitOpening) {
     interPartitionCommandSenders = new ArrayList<>();
 
@@ -176,17 +201,19 @@ public final class EngineRule extends ExternalResource {
           interPartitionCommandSenders.add(interPartitionCommandSender);
           environmentRule.startTypedStreamProcessor(
               partitionId,
-              (recordProcessorContext) ->
-                  EngineProcessors.createEngineProcessors(
-                          recordProcessorContext,
-                          partitionCount,
-                          new SubscriptionCommandSender(partitionId, interPartitionCommandSender),
-                          interPartitionCommandSender,
-                          featureFlags,
-                          jobStreamer)
-                      .withListener(
-                          new ProcessingExporterTransistor(
-                              environmentRule.getLogStream(partitionId))),
+              (recordProcessorContext) -> {
+                securityConfigModifier.accept(recordProcessorContext.getSecurityConfig());
+                return EngineProcessors.createEngineProcessors(
+                        recordProcessorContext,
+                        partitionCount,
+                        new SubscriptionCommandSender(partitionId, interPartitionCommandSender),
+                        interPartitionCommandSender,
+                        featureFlags,
+                        jobStreamer)
+                    .withListener(
+                        new ProcessingExporterTransistor(
+                            environmentRule.getLogStream(partitionId)));
+              },
               Optional.of(
                   new StreamProcessorListener() {
                     @Override
@@ -286,6 +313,14 @@ public final class EngineRule extends ExternalResource {
     return environmentRule.getStreamClock(partitionId);
   }
 
+  public MeterRegistry getMeterRegistry() {
+    return getMeterRegistry(PARTITION_ID);
+  }
+
+  public MeterRegistry getMeterRegistry(final int partitionId) {
+    return environmentRule.getMeterRegistry(partitionId);
+  }
+
   public long getLastProcessedPosition() {
     return lastProcessedPosition;
   }
@@ -342,8 +377,28 @@ public final class EngineRule extends ExternalResource {
     return new UserClient(environmentRule);
   }
 
+  public IdentitySetupClient identitySetup() {
+    return new IdentitySetupClient(environmentRule);
+  }
+
   public AuthorizationClient authorization() {
     return new AuthorizationClient(environmentRule);
+  }
+
+  public RoleClient role() {
+    return new RoleClient(environmentRule);
+  }
+
+  public TenantClient tenant() {
+    return new TenantClient(environmentRule);
+  }
+
+  public MappingClient mapping() {
+    return new MappingClient(environmentRule);
+  }
+
+  public GroupClient group() {
+    return new GroupClient(environmentRule);
   }
 
   public Record<JobRecordValue> createJob(final String type, final String processId) {
@@ -431,6 +486,20 @@ public final class EngineRule extends ExternalResource {
                 }));
   }
 
+  public void awaitIdentitySetup() {
+    if (partitionCount > 1) {
+      RecordingExporter.identitySetupRecords(IdentitySetupIntent.INITIALIZED)
+          .skip(partitionCount - 1)
+          .await();
+      RecordingExporter.commandDistributionRecords(CommandDistributionIntent.FINISHED)
+          .withDistributionIntent(IdentitySetupIntent.INITIALIZE)
+          .await();
+    } else {
+      RecordingExporter.identitySetupRecords(IdentitySetupIntent.INITIALIZED).await();
+    }
+    RecordingExporter.reset();
+  }
+
   public void awaitProcessingOf(final Record<?> record) {
     final var recordPosition = record.getPosition();
 
@@ -465,6 +534,10 @@ public final class EngineRule extends ExternalResource {
 
   public ClockClient clock() {
     return new ClockClient(environmentRule);
+  }
+
+  public ActorScheduler actorScheduler() {
+    return environmentRule.getActorScheduler();
   }
 
   private static final class VersatileBlob implements DbKey, DbValue {

@@ -18,14 +18,16 @@ import io.camunda.optimize.dto.optimize.query.report.single.process.filter.data.
 import io.camunda.optimize.service.db.filter.FilterContext;
 import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCondition;
 import java.util.List;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
 @Conditional(ElasticSearchCondition.class)
 public class CanceledFlowNodeQueryFilterES implements QueryFilterES<CanceledFlowNodeFilterDataDto> {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(CanceledFlowNodeQueryFilterES.class);
 
   @Override
   public void addFilters(
@@ -35,11 +37,11 @@ public class CanceledFlowNodeQueryFilterES implements QueryFilterES<CanceledFlow
     query.filter(flowNodeFilter.stream().map(this::createFilterQueryBuilder).toList());
   }
 
-  private Query createFilterQueryBuilder(CanceledFlowNodeFilterDataDto flowNodeFilter) {
-    Query.Builder builder = new Query.Builder();
+  private Query createFilterQueryBuilder(final CanceledFlowNodeFilterDataDto flowNodeFilter) {
+    final Query.Builder builder = new Query.Builder();
     builder.bool(
         b -> {
-          for (String value : flowNodeFilter.getValues()) {
+          for (final String value : flowNodeFilter.getValues()) {
             b.should(
                 s ->
                     s.nested(

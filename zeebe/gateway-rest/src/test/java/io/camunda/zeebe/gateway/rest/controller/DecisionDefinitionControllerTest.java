@@ -13,10 +13,10 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
+import io.camunda.security.configuration.MultiTenancyConfiguration;
 import io.camunda.service.DecisionDefinitionServices;
 import io.camunda.zeebe.broker.client.api.dto.BrokerResponse;
-import io.camunda.zeebe.gateway.impl.configuration.MultiTenancyCfg;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
 import io.camunda.zeebe.protocol.impl.record.value.decision.DecisionEvaluationRecord;
 import io.camunda.zeebe.protocol.record.value.TenantOwned;
@@ -38,21 +38,21 @@ public class DecisionDefinitionControllerTest extends RestControllerTest {
   private static final String EXPECTED_EVALUATION_RESPONSE =
       """
           {
-             "decisionDefinitionKey":123456,
+             "decisionDefinitionKey":"123456",
              "decisionDefinitionId":"decisionId",
              "decisionDefinitionName":"decisionName",
              "decisionDefinitionVersion":1,
              "decisionRequirementsId":"decisionRequirementsId",
-             "decisionRequirementsKey":123456,
+             "decisionRequirementsKey":"123456",
              "output":"null",
              "failedDecisionDefinitionId":"",
              "failureMessage":"",
              "tenantId":"tenantId",
-             "decisionInstanceKey":123,
+             "decisionInstanceKey":"123",
              "evaluatedDecisions":[]
           }""";
 
-  @MockBean MultiTenancyCfg multiTenancyCfg;
+  @MockBean MultiTenancyConfiguration multiTenancyCfg;
   @MockBean private DecisionDefinitionServices decisionServices;
 
   @BeforeEach

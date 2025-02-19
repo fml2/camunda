@@ -34,6 +34,7 @@ import io.camunda.optimize.dto.optimize.query.report.single.result.ResultType;
 import io.camunda.optimize.dto.optimize.query.variable.ProcessVariableNameResponseDto;
 import io.camunda.optimize.dto.optimize.query.variable.VariableType;
 import io.camunda.optimize.dto.optimize.rest.AuthorizedReportDefinitionResponseDto;
+import io.camunda.optimize.rest.exceptions.ForbiddenException;
 import io.camunda.optimize.service.DefinitionService;
 import io.camunda.optimize.service.exceptions.OptimizeException;
 import io.camunda.optimize.service.exceptions.OptimizeValidationException;
@@ -43,7 +44,6 @@ import io.camunda.optimize.service.identity.CollapsedSubprocessNodesService;
 import io.camunda.optimize.service.report.ReportService;
 import io.camunda.optimize.service.util.ValidationHelper;
 import io.camunda.optimize.service.variable.ProcessVariableService;
-import jakarta.ws.rs.ForbiddenException;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
@@ -52,13 +52,11 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.collections4.CollectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
 public abstract class ReportEvaluationHandler {
 
@@ -70,6 +68,21 @@ public abstract class ReportEvaluationHandler {
   private final ProcessVariableService processVariableService;
   private final DefinitionService definitionService;
   private final CollapsedSubprocessNodesService collapsedSubprocessNodesService;
+
+  public ReportEvaluationHandler(
+      final ReportService reportService,
+      final SingleReportEvaluator singleReportEvaluator,
+      final CombinedReportEvaluator combinedReportEvaluator,
+      final ProcessVariableService processVariableService,
+      final DefinitionService definitionService,
+      final CollapsedSubprocessNodesService collapsedSubprocessNodesService) {
+    this.reportService = reportService;
+    this.singleReportEvaluator = singleReportEvaluator;
+    this.combinedReportEvaluator = combinedReportEvaluator;
+    this.processVariableService = processVariableService;
+    this.definitionService = definitionService;
+    this.collapsedSubprocessNodesService = collapsedSubprocessNodesService;
+  }
 
   public AuthorizedReportEvaluationResult evaluateReport(
       final ReportEvaluationInfo evaluationInfo) {

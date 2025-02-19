@@ -7,7 +7,6 @@
  */
 package io.camunda.operate.webapp.rest;
 
-import io.camunda.operate.entities.BatchOperationEntity;
 import io.camunda.operate.util.rest.ValidLongId;
 import io.camunda.operate.webapp.InternalAPIErrorController;
 import io.camunda.operate.webapp.reader.DecisionReader;
@@ -15,9 +14,10 @@ import io.camunda.operate.webapp.rest.dto.DecisionRequestDto;
 import io.camunda.operate.webapp.rest.dto.dmn.DecisionGroupDto;
 import io.camunda.operate.webapp.rest.exception.NotAuthorizedException;
 import io.camunda.operate.webapp.security.identity.IdentityPermission;
-import io.camunda.operate.webapp.security.identity.PermissionsService;
+import io.camunda.operate.webapp.security.permission.PermissionsService;
 import io.camunda.operate.webapp.writer.BatchOperationWriter;
 import io.camunda.webapps.schema.entities.operate.dmn.definition.DecisionDefinitionEntity;
+import io.camunda.webapps.schema.entities.operation.BatchOperationEntity;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -33,11 +33,8 @@ public class DecisionRestService extends InternalAPIErrorController {
 
   public static final String DECISION_URL = "/api/decisions";
 
-  @Autowired protected DecisionReader decisionReader;
-
-  @Autowired(required = false)
-  protected PermissionsService permissionsService;
-
+  @Autowired private DecisionReader decisionReader;
+  @Autowired private PermissionsService permissionsService;
   @Autowired private BatchOperationWriter batchOperationWriter;
 
   @Operation(summary = "Get decision DMN XML")
@@ -78,9 +75,10 @@ public class DecisionRestService extends InternalAPIErrorController {
   }
 
   private void checkIdentityReadPermission(final Long decisionDefinitionKey) {
-    if (permissionsService != null) {
+    if (permissionsService.permissionsEnabled()) {
       final String decisionId = decisionReader.getDecision(decisionDefinitionKey).getDecisionId();
-      if (!permissionsService.hasPermissionForDecision(decisionId, IdentityPermission.READ)) {
+      if (!permissionsService.hasPermissionForDecision(
+          decisionId, IdentityPermission.READ_DECISION_INSTANCE)) {
         throw new NotAuthorizedException(
             String.format("No read permission for decision %s", decisionId));
       }
@@ -88,8 +86,9 @@ public class DecisionRestService extends InternalAPIErrorController {
   }
 
   private void checkIdentityDeletePermission(final String decisionId) {
-    if (permissionsService != null) {
-      if (!permissionsService.hasPermissionForDecision(decisionId, IdentityPermission.DELETE)) {
+    if (permissionsService.permissionsEnabled()) {
+      if (!permissionsService.hasPermissionForDecision(
+          decisionId, IdentityPermission.DELETE_DECISION_INSTANCE)) {
         throw new NotAuthorizedException(
             String.format("No delete permission for decision %s", decisionId));
       }

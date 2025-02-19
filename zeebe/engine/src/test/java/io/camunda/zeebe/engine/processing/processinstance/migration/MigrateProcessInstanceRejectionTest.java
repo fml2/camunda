@@ -10,6 +10,7 @@ package io.camunda.zeebe.engine.processing.processinstance.migration;
 import static io.camunda.zeebe.engine.processing.processinstance.migration.MigrationTestUtil.extractProcessDefinitionKeyByProcessId;
 import static io.camunda.zeebe.protocol.record.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 import io.camunda.zeebe.engine.util.EngineRule;
 import io.camunda.zeebe.model.bpmn.Bpmn;
@@ -23,6 +24,7 @@ import io.camunda.zeebe.protocol.record.value.DeploymentRecordValue;
 import io.camunda.zeebe.test.util.BrokerClassRuleHelper;
 import io.camunda.zeebe.test.util.record.RecordingExporter;
 import io.camunda.zeebe.test.util.record.RecordingExporterTestWatcher;
+import java.util.Map;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -961,146 +963,6 @@ public class MigrateProcessInstanceRejectionTest {
 
   @Test
   public void
-      shouldRejectCommandWhenMigratedProcessInstanceHasASubprocessWithEscalationBoundaryEvent() {
-    // given
-    final var deployment =
-        ENGINE
-            .deployment()
-            .withXmlResource(
-                Bpmn.createExecutableProcess("process")
-                    .startEvent()
-                    .subProcess(
-                        "sub",
-                        s ->
-                            s.embeddedSubProcess()
-                                .startEvent()
-                                .serviceTask("A", t -> t.zeebeJobType("A"))
-                                .endEvent("end", e -> e.escalation("escalation")))
-                    .boundaryEvent("catch", b -> b.escalation("escalation"))
-                    .endEvent()
-                    .done())
-            .withXmlResource(
-                Bpmn.createExecutableProcess("process2")
-                    .startEvent()
-                    .subProcess(
-                        "sub",
-                        s ->
-                            s.embeddedSubProcess()
-                                .startEvent()
-                                .serviceTask("A", t -> t.zeebeJobType("A"))
-                                .endEvent("end", e -> e.escalation("escalation")))
-                    .endEvent()
-                    .done())
-            .deploy();
-
-    final long processInstanceKey = ENGINE.processInstance().ofBpmnProcessId("process").create();
-
-    RecordingExporter.processInstanceRecords(ProcessInstanceIntent.ELEMENT_ACTIVATED)
-        .withElementId("A")
-        .await();
-
-    final long targetProcessDefinitionKey =
-        extractTargetProcessDefinitionKey(deployment, "process2");
-
-    // when
-    ENGINE
-        .processInstance()
-        .withInstanceKey(processInstanceKey)
-        .migration()
-        .withTargetProcessDefinitionKey(targetProcessDefinitionKey)
-        .addMappingInstruction("sub", "sub")
-        .addMappingInstruction("A", "A")
-        .expectRejection()
-        .migrate();
-
-    // then
-    final var rejectionRecord =
-        RecordingExporter.processInstanceMigrationRecords().onlyCommandRejections().getFirst();
-
-    assertThat(rejectionRecord)
-        .hasIntent(ProcessInstanceMigrationIntent.MIGRATE)
-        .hasRejectionType(RejectionType.INVALID_STATE)
-        .hasRejectionReason(
-            """
-                Expected to migrate process instance '%s' \
-                but active element with id 'sub' has one or more boundary events of types 'ESCALATION'. \
-                Migrating active elements with boundary events of these types is not possible yet."""
-                .formatted(processInstanceKey))
-        .hasKey(processInstanceKey);
-  }
-
-  @Test
-  public void
-      shouldRejectCommandWhenTargetProcessDefinitionHasASubprocessWithEscalationBoundaryEvent() {
-    // given
-    final var deployment =
-        ENGINE
-            .deployment()
-            .withXmlResource(
-                Bpmn.createExecutableProcess("process")
-                    .startEvent()
-                    .subProcess(
-                        "sub",
-                        s ->
-                            s.embeddedSubProcess()
-                                .startEvent()
-                                .serviceTask("A", t -> t.zeebeJobType("A"))
-                                .endEvent("end", e -> e.escalation("escalation")))
-                    .endEvent()
-                    .done())
-            .withXmlResource(
-                Bpmn.createExecutableProcess("process2")
-                    .startEvent()
-                    .subProcess(
-                        "sub",
-                        s ->
-                            s.embeddedSubProcess()
-                                .startEvent()
-                                .serviceTask("A", t -> t.zeebeJobType("A"))
-                                .endEvent("end", e -> e.escalation("escalation")))
-                    .boundaryEvent("catch", b -> b.escalation("escalation"))
-                    .endEvent()
-                    .done())
-            .deploy();
-
-    final long processInstanceKey = ENGINE.processInstance().ofBpmnProcessId("process").create();
-
-    final long targetProcessDefinitionKey =
-        extractTargetProcessDefinitionKey(deployment, "process2");
-
-    RecordingExporter.processInstanceRecords(ProcessInstanceIntent.ELEMENT_ACTIVATED)
-        .withProcessInstanceKey(processInstanceKey)
-        .withElementId("A")
-        .await();
-
-    // when
-    ENGINE
-        .processInstance()
-        .withInstanceKey(processInstanceKey)
-        .migration()
-        .withTargetProcessDefinitionKey(targetProcessDefinitionKey)
-        .addMappingInstruction("sub", "sub")
-        .addMappingInstruction("A", "A")
-        .expectRejection()
-        .migrate();
-
-    // then
-    final var rejectionRecord =
-        RecordingExporter.processInstanceMigrationRecords().onlyCommandRejections().getFirst();
-    assertThat(rejectionRecord)
-        .hasIntent(ProcessInstanceMigrationIntent.MIGRATE)
-        .hasRejectionType(RejectionType.INVALID_STATE)
-        .hasRejectionReason(
-            """
-            Expected to migrate process instance '%s' \
-            but target element with id 'sub' has one or more boundary events of types 'ESCALATION'. \
-            Migrating target elements with boundary events of these types is not possible yet."""
-                .formatted(processInstanceKey))
-        .hasKey(processInstanceKey);
-  }
-
-  @Test
-  public void
       shouldRejectCommandWhenActiveElementSubscribesToTheSameMessageBoundaryEventWithoutMapping() {
     // given
     final var deployment =
@@ -1683,6 +1545,136 @@ public class MigrateProcessInstanceRejectionTest {
                 Both elements must have either sequential or parallel loop characteristics.""",
                 processInstanceKey))
         .hasKey(processInstanceKey);
+  }
+
+  @Test
+  public void shouldNotStoreSubscriptionDeletionInTransientStateWhenRejectingCommand() {
+    // given
+    final var deployment =
+        ENGINE
+            .deployment()
+            .withXmlResource(
+                Bpmn.createExecutableProcess("process")
+                    .startEvent()
+                    .serviceTask("A", a -> a.zeebeJobType("A"))
+                    .boundaryEvent("boundary")
+                    .message(m -> m.name("message").zeebeCorrelationKeyExpression("key"))
+                    .endEvent()
+                    .moveToActivity("A")
+                    .endEvent()
+                    .done())
+            .withXmlResource(
+                Bpmn.createExecutableProcess("process2")
+                    .startEvent()
+                    .serviceTask("A", t -> t.zeebeJobType("A"))
+                    .boundaryEvent("boundary")
+                    .message(m -> m.name("message").zeebeCorrelationKeyExpression("key"))
+                    .endEvent()
+                    .moveToActivity("A")
+                    .endEvent("end")
+                    .done())
+            .deploy();
+
+    final long processInstanceKey =
+        ENGINE.processInstance().ofBpmnProcessId("process").withVariable("key", "key").create();
+
+    final long targetProcessDefinitionKey =
+        extractProcessDefinitionKeyByProcessId(deployment, "process2");
+
+    RecordingExporter.processInstanceRecords(ProcessInstanceIntent.ELEMENT_ACTIVATED)
+        .withProcessInstanceKey(processInstanceKey)
+        .withElementId("A")
+        .await();
+
+    // when
+    ENGINE
+        .processInstance()
+        .withInstanceKey(processInstanceKey)
+        .migration()
+        .withTargetProcessDefinitionKey(targetProcessDefinitionKey)
+        .addMappingInstruction("A", "A")
+        .expectRejection()
+        .migrate();
+
+    // then
+    ENGINE
+        .getProcessingState()
+        .getPendingProcessMessageSubscriptionState()
+        .visitPending(
+            System.currentTimeMillis(),
+            s -> {
+              fail("Encountered a pending process message subscription.");
+              return true;
+            });
+  }
+
+  @Test
+  public void shouldNotStoreSubscriptionCreationInTransientStateWhenRejectingCommand() {
+    // given
+    final var deployment =
+        ENGINE
+            .deployment()
+            .withXmlResource(
+                Bpmn.createExecutableProcess("process")
+                    .startEvent()
+                    .serviceTask("A", a -> a.zeebeJobType("A"))
+                    .boundaryEvent("boundary1")
+                    .message(m -> m.name("message1").zeebeCorrelationKeyExpression("key1"))
+                    .endEvent()
+                    .moveToActivity("A")
+                    .endEvent()
+                    .done())
+            .withXmlResource(
+                Bpmn.createExecutableProcess("process2")
+                    .startEvent()
+                    .serviceTask("A", t -> t.zeebeJobType("A"))
+                    .boundaryEvent("boundary2")
+                    .message(m -> m.name("message2").zeebeCorrelationKeyExpression("key2"))
+                    .endEvent()
+                    .moveToActivity("A")
+                    .boundaryEvent("boundary1")
+                    .message(m -> m.name("message1").zeebeCorrelationKeyExpression("key1"))
+                    .endEvent()
+                    .moveToActivity("A")
+                    .endEvent("end")
+                    .done())
+            .deploy();
+
+    final long processInstanceKey =
+        ENGINE
+            .processInstance()
+            .ofBpmnProcessId("process")
+            .withVariables(Map.of("key1", "key1", "key2", "key2"))
+            .create();
+
+    final long targetProcessDefinitionKey =
+        extractProcessDefinitionKeyByProcessId(deployment, "process2");
+
+    RecordingExporter.processInstanceRecords(ProcessInstanceIntent.ELEMENT_ACTIVATED)
+        .withProcessInstanceKey(processInstanceKey)
+        .withElementId("A")
+        .await();
+
+    // when
+    ENGINE
+        .processInstance()
+        .withInstanceKey(processInstanceKey)
+        .migration()
+        .withTargetProcessDefinitionKey(targetProcessDefinitionKey)
+        .addMappingInstruction("A", "A")
+        .expectRejection()
+        .migrate();
+
+    // then
+    ENGINE
+        .getProcessingState()
+        .getPendingProcessMessageSubscriptionState()
+        .visitPending(
+            System.currentTimeMillis(),
+            s -> {
+              fail("Encountered a pending process message subscription.");
+              return true;
+            });
   }
 
   private static long extractTargetProcessDefinitionKey(

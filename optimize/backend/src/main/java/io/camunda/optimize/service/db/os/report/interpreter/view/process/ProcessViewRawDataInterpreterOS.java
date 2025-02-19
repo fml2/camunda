@@ -10,11 +10,11 @@ package io.camunda.optimize.service.db.os.report.interpreter.view.process;
 import static io.camunda.optimize.dto.optimize.query.report.single.configuration.TableColumnDto.VARIABLE_PREFIX;
 import static io.camunda.optimize.service.db.DatabaseConstants.MAX_RESPONSE_SIZE_LIMIT;
 import static io.camunda.optimize.service.db.DatabaseConstants.OPTIMIZE_DATE_FORMAT;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.json;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.scriptField;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.sourceExclude;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.UnitDSL.seconds;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.json;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.scriptField;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.sourceExclude;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.UnitDSL.seconds;
 import static io.camunda.optimize.service.db.os.writer.OpenSearchWriterUtil.createDefaultScript;
 import static io.camunda.optimize.service.db.os.writer.OpenSearchWriterUtil.createDefaultScriptWithSpecificDtoParams;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_INSTANCES;
@@ -32,11 +32,11 @@ import io.camunda.optimize.dto.optimize.query.sorting.ReportSortingDto;
 import io.camunda.optimize.dto.optimize.query.variable.ProcessVariableNameResponseDto;
 import io.camunda.optimize.dto.optimize.rest.pagination.PaginationDto;
 import io.camunda.optimize.service.DefinitionService;
-import io.camunda.optimize.service.db.es.report.command.process.mapping.RawProcessDataResultDtoMapper;
 import io.camunda.optimize.service.db.os.OptimizeOpenSearchClient;
-import io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL;
+import io.camunda.optimize.service.db.os.client.dsl.QueryDSL;
 import io.camunda.optimize.service.db.os.report.interpreter.RawResult;
 import io.camunda.optimize.service.db.report.ExecutionContext;
+import io.camunda.optimize.service.db.report.interpreter.util.RawProcessDataResultDtoMapper;
 import io.camunda.optimize.service.db.report.interpreter.view.process.AbstractProcessViewRawDataInterpreter;
 import io.camunda.optimize.service.db.report.plan.process.ProcessExecutionPlan;
 import io.camunda.optimize.service.db.report.result.CompositeCommandResult.ViewResult;
@@ -54,8 +54,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.json.JsonData;
 import org.opensearch.client.opensearch._types.Script;
 import org.opensearch.client.opensearch._types.ScriptSortType;
@@ -69,20 +67,35 @@ import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
 import org.opensearch.client.opensearch.core.search.Hit;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataInterpreter
     implements ProcessViewInterpreterOS {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(ProcessViewRawDataInterpreterOS.class);
   private final ConfigurationService configurationService;
   private final ObjectMapper objectMapper;
   private final OptimizeOpenSearchClient osClient;
   private final DefinitionService definitionService;
   private final VariableRepositoryOS variableRepository;
+
+  public ProcessViewRawDataInterpreterOS(
+      final ConfigurationService configurationService,
+      final ObjectMapper objectMapper,
+      final OptimizeOpenSearchClient osClient,
+      final DefinitionService definitionService,
+      final VariableRepositoryOS variableRepository) {
+    this.configurationService = configurationService;
+    this.objectMapper = objectMapper;
+    this.osClient = osClient;
+    this.definitionService = definitionService;
+    this.variableRepository = variableRepository;
+  }
 
   @Override
   public void adjustSearchRequest(
@@ -117,7 +130,7 @@ public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataI
               });
     }
 
-    Map<String, JsonData> params = new HashMap<>();
+    final Map<String, JsonData> params = new HashMap<>();
     params.put(CURRENT_TIME, json(LocalDateUtil.getCurrentDateTime().toInstant().toEpochMilli()));
     params.put(DATE_FORMAT, json(OPTIMIZE_DATE_FORMAT));
     searchRequestBuilder.scriptFields(
@@ -148,25 +161,24 @@ public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataI
         new HashMap<>();
     final Map<String, Long> instanceIdsToUserTaskCount = new HashMap<>();
     final List<ProcessInstanceDto> rawDataProcessInstanceDtos;
+    final List<Hit<RawResult>> hits = new ArrayList<>();
     if (context.isCsvExport()) {
       final int limit = context.getPagination().orElse(new PaginationDto()).getLimit();
-      final List<Hit<RawResult>> hits = new ArrayList<>();
       osClient.scrollWith(response, hits::addAll, RawResult.class, limit);
-      rawDataProcessInstanceDtos = transformHits(hits);
     } else {
-      rawDataProcessInstanceDtos =
-          response.hits().hits().stream()
-              .map(
-                  mappingFunction(
-                      processInstanceIdsToFlowNodeIdsAndDurations,
-                      instanceIdsToUserTaskCount,
-                      context))
-              .toList();
+      hits.addAll(response.hits().hits());
     }
-
-    RawProcessDataResultDtoMapper rawDataSingleReportResultDtoMapper =
+    rawDataProcessInstanceDtos =
+        hits.stream()
+            .map(
+                mappingFunction(
+                    processInstanceIdsToFlowNodeIdsAndDurations,
+                    instanceIdsToUserTaskCount,
+                    context))
+            .toList();
+    final RawProcessDataResultDtoMapper rawDataSingleReportResultDtoMapper =
         new RawProcessDataResultDtoMapper();
-    Map<String, String> flowNodeIdsToFlowNodeNames =
+    final Map<String, String> flowNodeIdsToFlowNodeNames =
         definitionService.fetchDefinitionFlowNodeNamesAndIdsForProcessInstances(
             rawDataProcessInstanceDtos);
     final List<RawDataProcessInstanceDto> rawData =
@@ -182,12 +194,12 @@ public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataI
     return ViewResult.builder().rawData(rawData).build();
   }
 
-  private <R> R getField(Hit<RawResult> hit, String field) {
+  private <R> R getField(final Hit<RawResult> hit, final String field) {
     try {
       final List<R> values =
           objectMapper.readValue(hit.fields().get(field).toJson().toString(), List.class);
       return values.get(0);
-    } catch (Exception e) {
+    } catch (final Exception e) {
       throw new OptimizeRuntimeException(format("Failed to extract %s from response!", field), e);
     }
   }
@@ -213,7 +225,7 @@ public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataI
               && ProcessInstanceIndex.DURATION.equals(sorting.get().getBy().get())) {
             processInstance.setDuration(Math.round(Double.parseDouble(hit.sort().get(0))));
           } else {
-            long currentTime = this.<Long>getField(hit, CURRENT_TIME);
+            final long currentTime = this.<Long>getField(hit, CURRENT_TIME);
             processInstance.setDuration(
                 currentTime - processInstance.getStartDate().toInstant().toEpochMilli());
           }
@@ -251,10 +263,6 @@ public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataI
         .orElse(SortOrder.Desc);
   }
 
-  private List<ProcessInstanceDto> transformHits(final List<Hit<RawResult>> rawResult) {
-    return rawResult.stream().map(this::transformHit).toList();
-  }
-
   private ProcessInstanceDto transformHit(final Hit<RawResult> hit) {
     return safe(
         () ->
@@ -266,14 +274,14 @@ public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataI
                     + "it was not possible to deserialize a hit from OpenSearch!"
                     + " Hit response from OpenSearch: "
                     + hit.source()),
-        log);
+        LOG);
   }
 
   private void addSorting(
-      String sortByField,
-      SortOrder sortOrder,
-      SearchRequest.Builder searchRequestBuilder,
-      Map<String, JsonData> params) {
+      final String sortByField,
+      final SortOrder sortOrder,
+      final SearchRequest.Builder searchRequestBuilder,
+      final Map<String, JsonData> params) {
     if (sortByField.startsWith(VARIABLE_PREFIX)) {
       final String variableName = sortByField.substring(VARIABLE_PREFIX.length());
       searchRequestBuilder.sort(
@@ -291,7 +299,7 @@ public class ProcessViewRawDataInterpreterOS extends AbstractProcessViewRawDataI
     } else if (sortByField.equals(ProcessInstanceIndex.DURATION)) {
       params.put("duration", json(ProcessInstanceIndex.DURATION));
       params.put("startDate", json(ProcessInstanceIndex.START_DATE));
-      Script script = createDefaultScriptWithSpecificDtoParams(SORT_SCRIPT, params);
+      final Script script = createDefaultScriptWithSpecificDtoParams(SORT_SCRIPT, params);
       searchRequestBuilder.sort(
           SortOptions.of(
               so -> so.script(s -> s.script(script).type(ScriptSortType.Number).order(sortOrder))));

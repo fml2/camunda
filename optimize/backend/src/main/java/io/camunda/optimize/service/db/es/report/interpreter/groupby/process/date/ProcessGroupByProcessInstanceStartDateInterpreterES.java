@@ -19,22 +19,35 @@ import io.camunda.optimize.service.db.report.plan.process.ProcessGroupBy;
 import io.camunda.optimize.service.util.configuration.ConfigurationService;
 import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCondition;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class ProcessGroupByProcessInstanceStartDateInterpreterES
     extends AbstractProcessGroupByProcessInstanceDateInterpreterES {
-  @Getter private final ConfigurationService configurationService;
-  @Getter private final DateAggregationServiceES dateAggregationService;
-  @Getter private final MinMaxStatsServiceES minMaxStatsService;
-  @Getter private final ProcessQueryFilterEnhancerES queryFilterEnhancer;
-  @Getter private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
-  @Getter private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  private final ConfigurationService configurationService;
+  private final DateAggregationServiceES dateAggregationService;
+  private final MinMaxStatsServiceES minMaxStatsService;
+  private final ProcessQueryFilterEnhancerES queryFilterEnhancer;
+  private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
+  private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  public ProcessGroupByProcessInstanceStartDateInterpreterES(
+      final ConfigurationService configurationService,
+      final DateAggregationServiceES dateAggregationService,
+      final MinMaxStatsServiceES minMaxStatsService,
+      final ProcessQueryFilterEnhancerES queryFilterEnhancer,
+      final ProcessDistributedByInterpreterFacadeES distributedByInterpreter,
+      final ProcessViewInterpreterFacadeES viewInterpreter) {
+    this.configurationService = configurationService;
+    this.dateAggregationService = dateAggregationService;
+    this.minMaxStatsService = minMaxStatsService;
+    this.queryFilterEnhancer = queryFilterEnhancer;
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Set<ProcessGroupBy> getSupportedGroupBys() {
@@ -42,7 +55,37 @@ public class ProcessGroupByProcessInstanceStartDateInterpreterES
   }
 
   @Override
+  public ConfigurationService getConfigurationService() {
+    return configurationService;
+  }
+
+  @Override
+  public DateAggregationServiceES getDateAggregationService() {
+    return dateAggregationService;
+  }
+
+  @Override
+  public MinMaxStatsServiceES getMinMaxStatsService() {
+    return minMaxStatsService;
+  }
+
+  @Override
+  public ProcessQueryFilterEnhancerES getQueryFilterEnhancer() {
+    return queryFilterEnhancer;
+  }
+
+  @Override
   public String getDateField() {
     return START_DATE;
+  }
+
+  @Override
+  public ProcessDistributedByInterpreterFacadeES getDistributedByInterpreter() {
+    return distributedByInterpreter;
+  }
+
+  @Override
+  public ProcessViewInterpreterFacadeES getViewInterpreter() {
+    return viewInterpreter;
   }
 }

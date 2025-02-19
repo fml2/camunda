@@ -10,13 +10,13 @@ package io.camunda.exporter;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import co.elastic.clients.elasticsearch._types.ElasticsearchException;
-import io.camunda.exporter.config.ElasticsearchExporterConfiguration;
-import io.camunda.exporter.utils.TestSupport;
+import io.camunda.exporter.config.ExporterConfiguration;
+import io.camunda.exporter.exceptions.ElasticsearchExporterException;
 import io.camunda.zeebe.exporter.test.ExporterTestConfiguration;
 import io.camunda.zeebe.exporter.test.ExporterTestContext;
 import io.camunda.zeebe.exporter.test.ExporterTestController;
 import io.camunda.zeebe.test.broker.protocol.ProtocolFactory;
+import io.camunda.zeebe.test.util.testcontainers.TestSearchContainers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
@@ -27,12 +27,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 public class CamundaExporterAuthenticationIT {
 
   private static final String ELASTIC_PASSWORD = "PASSWORD";
-  private static final ElasticsearchExporterConfiguration CONFIG =
-      new ElasticsearchExporterConfiguration();
+  private static final ExporterConfiguration CONFIG = new ExporterConfiguration();
 
   @Container
   private static final ElasticsearchContainer CONTAINER =
-      TestSupport.createDefaultContainer()
+      TestSearchContainers.createDefeaultElasticsearchContainer()
           .withPassword(ELASTIC_PASSWORD)
           .withEnv("xpack.security.enabled", "true");
 
@@ -41,10 +40,10 @@ public class CamundaExporterAuthenticationIT {
 
   @BeforeEach
   void beforeEach() {
-    CONFIG.elasticsearch.getConnect().setUsername("elastic");
-    CONFIG.elasticsearch.getConnect().setPassword(ELASTIC_PASSWORD);
-    CONFIG.elasticsearch.getConnect().setUrl(CONTAINER.getHttpHostAddress());
-    CONFIG.elasticsearch.setCreateSchema(true);
+    CONFIG.getConnect().setUsername("elastic");
+    CONFIG.getConnect().setPassword(ELASTIC_PASSWORD);
+    CONFIG.getConnect().setUrl(CONTAINER.getHttpHostAddress());
+    CONFIG.setCreateSchema(true);
   }
 
   @Test
@@ -67,7 +66,7 @@ public class CamundaExporterAuthenticationIT {
   void shouldFailToAuthenticateForWrongCredentials() {
     // given
     final var exporter = new CamundaExporter();
-    CONFIG.elasticsearch.getConnect().setPassword("123");
+    CONFIG.getConnect().setPassword("123");
 
     final var context =
         new ExporterTestContext()
@@ -78,7 +77,8 @@ public class CamundaExporterAuthenticationIT {
 
     // then
     assertThatThrownBy(() -> exporter.open(controller))
-        .isInstanceOf(ElasticsearchException.class)
+        .isInstanceOf(ElasticsearchExporterException.class)
+        .cause()
         .hasMessageContaining("unable to authenticate user");
   }
 }

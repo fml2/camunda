@@ -18,23 +18,27 @@ import io.camunda.optimize.service.db.es.schema.PropertiesAppender;
 import io.camunda.optimize.service.util.configuration.ConfigurationService;
 import java.io.IOException;
 import java.util.Map;
-import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class DefaultIndexMappingCreator<TBuilder>
     implements PropertiesAppender, IndexMappingCreator<TBuilder> {
 
-  private final Logger logger = LoggerFactory.getLogger(getClass());
-  private static final String DYNAMIC_MAPPINGS_VALUE_DEFAULT = "strict";
   public static final String LOWERCASE = "lowercase";
   protected static final String ANALYZER = "analyzer";
   protected static final String NORMALIZER = "normalizer";
+  private static final String DYNAMIC_MAPPINGS_VALUE_DEFAULT = "strict";
 
-  @Setter private DynamicMapping dynamic = DynamicMapping.Strict;
+  private final Logger logger = LoggerFactory.getLogger(getClass());
+  private DynamicMapping dynamic = DynamicMapping.Strict;
 
   public abstract TBuilder addStaticSetting(final String key, final int value, TBuilder builder)
       throws IOException;
+
+  @Override
+  public boolean required() {
+    return false;
+  }
 
   @Override
   public TypeMapping getSource() {
@@ -67,5 +71,9 @@ public abstract class DefaultIndexMappingCreator<TBuilder>
                     t.matchMappingType("string")
                         .mapping(m -> m.keyword(k -> k.indexOptions(IndexOptions.Docs)))
                         .pathMatch("*"))));
+  }
+
+  public void setDynamic(final DynamicMapping dynamic) {
+    this.dynamic = dynamic;
   }
 }

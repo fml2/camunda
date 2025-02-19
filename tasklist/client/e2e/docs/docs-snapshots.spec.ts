@@ -6,7 +6,7 @@
  * except in compliance with the Camunda License 1.0.
  */
 
-import {Page, expect} from '@playwright/test';
+import {type Page, expect} from '@playwright/test';
 import {test} from '@/test-fixtures';
 import {sub as subTime} from 'date-fns/sub';
 import {add as addTime} from 'date-fns/add';
@@ -243,13 +243,12 @@ async function mockProcessStart(page: Page) {
 }
 
 async function mockCurrentUser(page: Page) {
-  await page.route(/^.*\/v1\/internal\/users\/current$/i, (route) =>
+  await page.route(/^.*\/v2\/authentication\/me$/i, (route) =>
     route.fulfill({
       status: 200,
       body: JSON.stringify({
         userId: 'demo',
         displayName: 'demo',
-        permissions: ['READ', 'WRITE'],
         salesPlanType: null,
         roles: null,
         c8Links: [],

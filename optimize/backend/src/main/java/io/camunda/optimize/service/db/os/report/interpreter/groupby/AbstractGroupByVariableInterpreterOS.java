@@ -8,9 +8,9 @@
 package io.camunda.optimize.service.db.os.report.interpreter.groupby;
 
 import static io.camunda.optimize.dto.optimize.ReportConstants.MISSING_VARIABLE_KEY;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.exists;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.matchAll;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.exists;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.matchAll;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
 import static io.camunda.optimize.service.db.os.report.filter.util.ModelElementFilterQueryUtilOS.createModelElementAggregationFilter;
 import static io.camunda.optimize.service.db.os.report.interpreter.util.FilterLimitedAggregationUtilOS.FILTER_LIMITED_AGGREGATION;
 import static io.camunda.optimize.service.db.os.report.service.VariableAggregationServiceOS.FILTERED_INSTANCE_COUNT_AGGREGATION;
@@ -36,7 +36,6 @@ import io.camunda.optimize.service.DefinitionService;
 import io.camunda.optimize.service.db.os.report.context.VariableAggregationContextOS;
 import io.camunda.optimize.service.db.os.report.interpreter.RawResult;
 import io.camunda.optimize.service.db.os.report.service.VariableAggregationServiceOS;
-import io.camunda.optimize.service.db.os.util.AggregateHelperOS;
 import io.camunda.optimize.service.db.report.ExecutionContext;
 import io.camunda.optimize.service.db.report.MinMaxStatDto;
 import io.camunda.optimize.service.db.report.plan.ExecutionPlan;
@@ -48,7 +47,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
@@ -59,12 +57,13 @@ import org.opensearch.client.opensearch._types.query_dsl.BoolQuery;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchResponse;
 
-@RequiredArgsConstructor
 public abstract class AbstractGroupByVariableInterpreterOS<
         DATA extends SingleReportDataDto, PLAN extends ExecutionPlan>
     extends AbstractGroupByInterpreterOS<DATA, PLAN> {
 
   public static final String FILTERED_FLOW_NODE_AGGREGATION = "filteredFlowNodeAggregation";
+
+  public AbstractGroupByVariableInterpreterOS() {}
 
   protected abstract VariableAggregationServiceOS getVariableAggregationService();
 
@@ -190,7 +189,7 @@ public abstract class AbstractGroupByVariableInterpreterOS<
   }
 
   private boolean isFlownodeReport(final PLAN plan) {
-    if (plan instanceof ProcessExecutionPlan processExecutionPlan) {
+    if (plan instanceof final ProcessExecutionPlan processExecutionPlan) {
       return Set.of(PROCESS_VIEW_FLOW_NODE_DURATION, PROCESS_VIEW_FLOW_NODE_FREQUENCY)
           .contains(processExecutionPlan.getView());
     } else {
@@ -206,9 +205,11 @@ public abstract class AbstractGroupByVariableInterpreterOS<
           new Aggregation.Builder()
               .filter(
                   createModelElementAggregationFilter(
-                      (ProcessReportDataDto) context.getReportData(),
-                      context.getFilterContext(),
-                      getDefinitionService()))
+                          (ProcessReportDataDto) context.getReportData(),
+                          context.getFilterContext(),
+                          getDefinitionService())
+                      .build()
+                      .toQuery())
               .aggregations(getDistributedByInterpreter().createAggregations(context, baseQuery))
               .build();
 
@@ -243,9 +244,8 @@ public abstract class AbstractGroupByVariableInterpreterOS<
       // variable
       return;
     }
-    final Map<String, Aggregate> fixedAggregations =
-        AggregateHelperOS.withNullValues(response.hits().total().value(), response.aggregations());
-    final NestedAggregate nested = fixedAggregations.get(NESTED_VARIABLE_AGGREGATION).nested();
+    final NestedAggregate nested =
+        response.aggregations().get(NESTED_VARIABLE_AGGREGATION).nested();
     final FilterAggregate filteredVariables =
         nested.aggregations().get(FILTERED_VARIABLES_AGGREGATION).filter();
     final Aggregate filterLimitedAggregation =
@@ -261,7 +261,7 @@ public abstract class AbstractGroupByVariableInterpreterOS<
             ? getVariableAggregationService().resultBucketMap(variablesAggregation)
             : getVariableAggregationService().resultBucketMap(histogramAggregation);
 
-    Map<String, Map<String, Aggregate>> bucketAggregations =
+    final Map<String, Map<String, Aggregate>> bucketAggregations =
         getVariableAggregationService()
             .retrieveResultBucketMap(
                 filteredParentAgg, bucketMap, getVariableType(context), context.getTimezone());
@@ -271,7 +271,7 @@ public abstract class AbstractGroupByVariableInterpreterOS<
         .enrichContextWithAllExpectedDistributedByKeys(context, filteredParentAgg.aggregations());
 
     final List<GroupByResult> groupedData = new ArrayList<>();
-    for (Map.Entry<String, Map<String, Aggregate>> keyToAggregationEntry :
+    for (final Map.Entry<String, Map<String, Aggregate>> keyToAggregationEntry :
         bucketAggregations.entrySet()) {
       final List<DistributedByResult> distribution =
           getDistributedByInterpreter()

@@ -7,10 +7,12 @@
  */
 package io.camunda.operate.qa.util;
 
+import static io.camunda.operate.qa.util.ContainerVersionsUtil.ZEEBE_CURRENTVERSION_DOCKER_REPO_PROPERTY_NAME;
 import static io.camunda.operate.util.ThreadUtil.sleepFor;
 import static org.testcontainers.images.PullPolicy.alwaysPull;
 
 import io.camunda.operate.exceptions.OperateRuntimeException;
+import io.camunda.operate.schema.migration.SemanticVersion;
 import io.camunda.operate.util.RetryOperation;
 import io.zeebe.containers.ZeebeContainer;
 import io.zeebe.containers.ZeebePort;
@@ -43,7 +45,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.testcontainers.Testcontainers;
-import org.testcontainers.containers.*;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.Network;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.HostPortWaitStrategy;
 import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
@@ -453,42 +458,36 @@ public class TestContainerUtil {
     // Spring from loading the default "application.properties" file which by default
     // configures the matching strategy
     properties.setProperty("spring.mvc.pathmatch.matching-strategy", "ANT_PATH_MATCHER");
+    properties.setProperty("spring.liquibase.enabled", "false");
 
     return properties;
-  }
-
-  public ZeebeContainer startZeebe(
-      final String dataFolderPath,
-      final String version,
-      final String prefix,
-      final Integer partitionCount) {
-    final TestContext testContext =
-        new TestContext()
-            .setZeebeDataFolder(new File(dataFolderPath))
-            .setZeebeIndexPrefix(prefix)
-            .setPartitionCount(partitionCount);
-    return startZeebe(version, testContext);
   }
 
   public ZeebeContainer startZeebe(
       final String version,
       final String prefix,
       final Integer partitionCount,
-      final boolean multitenancyEnabled) {
+      final boolean multitenancyEnabled,
+      final String connectionType) {
     final TestContext testContext =
         new TestContext()
             .setZeebeIndexPrefix(prefix)
             .setPartitionCount(partitionCount)
-            .setMultitenancyEnabled(multitenancyEnabled);
+            .setMultitenancyEnabled(multitenancyEnabled)
+            .setConnectionType(connectionType);
     return startZeebe(version, testContext);
   }
 
   public ZeebeContainer startZeebe(final String version, final TestContext testContext) {
     if (broker == null) {
-      LOGGER.info("************ Starting Zeebe {} ************", version);
+      final String dockerRepo =
+          ContainerVersionsUtil.readProperty(ZEEBE_CURRENTVERSION_DOCKER_REPO_PROPERTY_NAME);
+      LOGGER.info("************ Starting Zeebe {}:{} ************", dockerRepo, version);
       final long startTime = System.currentTimeMillis();
       Testcontainers.exposeHostPorts(ELS_PORT);
-      broker = new ZeebeContainer(DockerImageName.parse("camunda/zeebe:" + version));
+      broker =
+          new ZeebeContainer(DockerImageName.parse(String.format("%s:%s", dockerRepo, version)));
+      broker.withLogConsumer(new Slf4jLogConsumer(LOGGER));
       if (testContext.getNetwork() != null) {
         broker.withNetwork(testContext.getNetwork());
       }
@@ -504,37 +503,22 @@ public class TestContainerUtil {
       // this user cannot access a mounted volume that is owned by root
       broker.withCreateContainerCmdModifier(cmd -> cmd.withUser("root"));
 
+      if ("SNAPSHOT".equals(version)
+          || "current-test".equals(version)
+          || SemanticVersion.fromVersion(version).isAtLeast("8.8.0")) {
+        configureCamundaExporter(testContext);
+      } else {
+        configureElasticsearchExporter(testContext);
+      }
       broker
           .withEnv("JAVA_OPTS", "-Xss256k -XX:+TieredCompilation -XX:TieredStopAtLevel=1")
           .withEnv("ZEEBE_LOG_LEVEL", "DEBUG")
           .withEnv("ATOMIX_LOG_LEVEL", "ERROR")
           .withEnv("ZEEBE_CLOCK_CONTROLLED", "true")
-          .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL", getElasticURL(testContext))
-          .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_DELAY", "1")
-          .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_SIZE", "1")
-          .withEnv(
-              "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME",
-              "io.camunda.zeebe.exporter.ElasticsearchExporter")
-          .withEnv(
-              "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_DEPLOYMENTDISTRIBUTION", "false")
-          .withEnv(
-              "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_MESSAGESTARTSUBSCRIPTION", "false")
-          .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_TIMER", "false")
-          .withEnv(
-              "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PROCESSINSTANCECREATION", "false")
-          .withEnv(
-              "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PROCESSINSTANCEMODIFICATION",
-              "false")
-          .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_ESCALATION", "false")
-          .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PROCESSEVENT", "false")
           .withEnv("ZEEBE_BROKER_DATA_DISKUSAGEREPLICATIONWATERMARK", "0.99")
           .withEnv("ZEEBE_BROKER_DATA_DISKUSAGECOMMANDWATERMARK", "0.98")
           .withEnv("ZEEBE_BROKER_DATA_SNAPSHOTPERIOD", "1m");
-      if (testContext.getZeebeIndexPrefix() != null) {
-        broker.withEnv(
-            "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX",
-            testContext.getZeebeIndexPrefix());
-      }
+
       if (testContext.getPartitionCount() != null) {
         broker.withEnv(
             "ZEEBE_BROKER_CLUSTER_PARTITIONSCOUNT",
@@ -572,6 +556,50 @@ public class TestContainerUtil {
       throw new IllegalStateException("Broker is already started. Call stopZeebe first.");
     }
     return broker;
+  }
+
+  private void configureCamundaExporter(final TestContext testContext) {
+    broker
+        .withEnv(
+            "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_CLASSNAME",
+            "io.camunda.exporter.CamundaExporter")
+        .withEnv(
+            "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_CONNECT_TYPE",
+            testContext.getConnectionType())
+        .withEnv(
+            "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_CONNECT_URL", getElasticURL(testContext))
+        .withEnv("ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_BULK_DELAY", "1")
+        .withEnv("ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_BULK_SIZE", "1");
+    if (testContext.getZeebeIndexPrefix() != null) {
+      broker.withEnv(
+          "ZEEBE_BROKER_EXPORTERS_CAMUNDAEXPORTER_ARGS_INDEX_PREFIX",
+          testContext.getZeebeIndexPrefix());
+    }
+  }
+
+  private void configureElasticsearchExporter(final TestContext testContext) {
+    broker
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL", getElasticURL(testContext))
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_DELAY", "1")
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_SIZE", "1")
+        .withEnv(
+            "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME",
+            "io.camunda.zeebe.exporter.ElasticsearchExporter")
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_DEPLOYMENTDISTRIBUTION", "false")
+        .withEnv(
+            "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_MESSAGESTARTSUBSCRIPTION", "false")
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_TIMER", "false")
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PROCESSINSTANCECREATION", "false")
+        .withEnv(
+            "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PROCESSINSTANCEMODIFICATION", "false")
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_ESCALATION", "false")
+        .withEnv("ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PROCESSEVENT", "false");
+
+    if (testContext.getZeebeIndexPrefix() != null) {
+      broker.withEnv(
+          "ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX",
+          testContext.getZeebeIndexPrefix());
+    }
   }
 
   public void stopZeebeAndOperate(final TestContext testContext) {

@@ -8,36 +8,30 @@
 package io.camunda.zeebe.engine.state.mutable;
 
 import io.camunda.zeebe.engine.state.immutable.AuthorizationState;
-import io.camunda.zeebe.protocol.record.value.AuthorizationOwnerType;
-import io.camunda.zeebe.protocol.record.value.AuthorizationResourceType;
-import io.camunda.zeebe.protocol.record.value.PermissionType;
-import java.util.List;
+import io.camunda.zeebe.protocol.impl.record.value.authorization.AuthorizationRecord;
 
 public interface MutableAuthorizationState extends AuthorizationState {
 
   /**
-   * Checks if a Permission exists for the provided ownerKey, resourceType and permissionType. If it
-   * does, adds the resourceIds to this entry. If it does not, creates a new Permission with the
-   * provided resourceIds.
+   * Stores the provided authorization in the state.
    *
-   * @param ownerKey the key of the owner of the permissions. This could be a userKey, a roleKey or
-   *     a groupKey
-   * @param resourceType the type of resource the permissions are for (Eg. Process definition, Job)
-   * @param permissionType The type of permission being granted (Eg. READ, WRITE)
-   * @param resourceIds A list of resourceIds the permissions are granted for (Eg.
-   *     bpmnProcessId:foo, *)
+   * @param authorizationKey the key of the authorization
+   * @param authorization the authorization record to store
    */
-  void createOrAddPermission(
-      long ownerKey,
-      AuthorizationResourceType resourceType,
-      PermissionType permissionType,
-      List<String> resourceIds);
+  void create(final long authorizationKey, final AuthorizationRecord authorization);
 
   /**
-   * Stores the owner type for a new owner in the state.
+   * Updates the provided authorization in the state.
    *
-   * @param ownerKey the key of the owner
-   * @param ownerType the type of the owner
+   * @param authorizationKey the key of the authorization
+   * @param authorization the authorization record to update
    */
-  void insertOwnerTypeByKey(final long ownerKey, final AuthorizationOwnerType ownerType);
+  void update(final long authorizationKey, final AuthorizationRecord authorization);
+
+  /**
+   * Removes the authorization with the provided key.
+   *
+   * @param authorizationKey the key of the authorization to remove
+   */
+  void delete(final long authorizationKey);
 }

@@ -7,7 +7,8 @@
  */
 package io.camunda.service;
 
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
+import io.camunda.service.security.SecurityContextProvider;
 import io.camunda.zeebe.broker.client.api.BrokerClient;
 import io.camunda.zeebe.broker.client.api.dto.BrokerResponse;
 import io.camunda.zeebe.gateway.impl.broker.request.BrokerCorrelateMessageRequest;
@@ -19,13 +20,16 @@ import java.util.concurrent.CompletableFuture;
 
 public final class MessageServices extends ApiServices<MessageServices> {
 
-  public MessageServices(final BrokerClient brokerClient, final Authentication authentication) {
-    super(brokerClient, authentication);
+  public MessageServices(
+      final BrokerClient brokerClient,
+      final SecurityContextProvider securityContextProvider,
+      final Authentication authentication) {
+    super(brokerClient, securityContextProvider, authentication);
   }
 
   @Override
   public MessageServices withAuthentication(final Authentication authentication) {
-    return new MessageServices(brokerClient, authentication);
+    return new MessageServices(brokerClient, securityContextProvider, authentication);
   }
 
   public CompletableFuture<MessageCorrelationRecord> correlateMessage(

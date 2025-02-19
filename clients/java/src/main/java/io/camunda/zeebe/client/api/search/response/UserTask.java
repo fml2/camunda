@@ -18,9 +18,14 @@ package io.camunda.zeebe.client.api.search.response;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * @deprecated since 8.8 for removal in 8.9, replaced by {@link
+ *     io.camunda.client.api.search.response.UserTask}
+ */
+@Deprecated
 public interface UserTask {
 
-  Long getUserTaskKey();
+  Long getKey();
 
   /** State of the task */
   String getState();

@@ -9,23 +9,30 @@ package io.camunda.exporter.schema;
 
 import static io.camunda.exporter.schema.SchemaTestUtil.validateMappings;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.Mockito.*;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import io.camunda.exporter.config.ElasticsearchExporterConfiguration;
-import io.camunda.exporter.config.ElasticsearchProperties.IndexSettings;
-import io.camunda.exporter.schema.ElasticsearchEngineClient.MappingSource;
-import io.camunda.exporter.utils.TestSupport;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
+import co.elastic.clients.elasticsearch.core.UpdateRequest;
+import io.camunda.exporter.config.ExporterConfiguration;
+import io.camunda.exporter.config.ExporterConfiguration.IndexSettings;
+import io.camunda.exporter.schema.elasticsearch.ElasticsearchEngineClient;
 import io.camunda.search.connect.es.ElasticsearchConnector;
 import io.camunda.webapps.schema.descriptors.IndexDescriptor;
+import io.camunda.webapps.schema.descriptors.operate.index.ImportPositionIndex;
+import io.camunda.webapps.schema.entities.operate.ImportPositionEntity;
+import io.camunda.zeebe.test.util.testcontainers.TestSearchContainers;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -34,7 +41,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 public class ElasticsearchEngineClientIT {
   @Container
-  private static final ElasticsearchContainer CONTAINER = TestSupport.createDefaultContainer();
+  private static final ElasticsearchContainer CONTAINER =
+      TestSearchContainers.createDefeaultElasticsearchContainer();
 
   private static ElasticsearchClient elsClient;
   private static ElasticsearchEngineClient elsEngineClient;
@@ -42,11 +50,12 @@ public class ElasticsearchEngineClientIT {
   @BeforeAll
   public static void init() {
     // Create the low-level client
-    final var config = new ElasticsearchExporterConfiguration();
-    config.elasticsearch.getConnect().setUrl(CONTAINER.getHttpHostAddress());
-    elsClient = new ElasticsearchConnector(config.elasticsearch.getConnect()).createClient();
+    final var config = new ExporterConfiguration();
+    config.getConnect().setUrl(CONTAINER.getHttpHostAddress());
+    final var esConnector = new ElasticsearchConnector(config.getConnect());
+    elsClient = esConnector.createClient();
 
-    elsEngineClient = new ElasticsearchEngineClient(elsClient);
+    elsEngineClient = new ElasticsearchEngineClient(elsClient, esConnector.objectMapper());
   }
 
   @BeforeEach
@@ -101,6 +110,27 @@ public class ElasticsearchEngineClientIT {
   }
 
   @Test
+  void shouldNotThrowIfTryingToCreateExistingTemplate() {
+    // given
+    final var indexTemplate =
+        SchemaTestUtil.mockIndexTemplate(
+            "index_name",
+            "test*",
+            "alias",
+            Collections.emptyList(),
+            "template_name",
+            "/mappings.json");
+
+    final var settings = new IndexSettings();
+    elsEngineClient.createIndexTemplate(indexTemplate, settings, true);
+
+    // when, then
+    assertThatNoException()
+        .describedAs("Creating an already existing template should not throw")
+        .isThrownBy(() -> elsEngineClient.createIndexTemplate(indexTemplate, settings, true));
+  }
+
+  @Test
   void shouldCreateIndexCorrectly() throws IOException {
     // given
     final var qualifiedIndexName = "full_name";
@@ -108,7 +138,7 @@ public class ElasticsearchEngineClientIT {
         SchemaTestUtil.mockIndex(qualifiedIndexName, "alias", "index_name", "/mappings.json");
 
     // when
-    elsEngineClient.createIndex(descriptor);
+    elsEngineClient.createIndex(descriptor, new IndexSettings());
 
     // then
     final var index =
@@ -120,9 +150,10 @@ public class ElasticsearchEngineClientIT {
   @Test
   void shouldRetrieveAllIndexMappingsWithImplementationAgnosticReturnType() {
     final var index =
-        SchemaTestUtil.mockIndex("index_qualified_name", "alias", "index_name", "/mappings.json");
+        SchemaTestUtil.mockIndex(
+            "index_qualified_name", "alias", "index_name", "/mappings-complex-property.json");
 
-    elsEngineClient.createIndex(index);
+    elsEngineClient.createIndex(index, new IndexSettings());
 
     final var mappings = elsEngineClient.getMappings("*", MappingSource.INDEX);
 
@@ -133,7 +164,8 @@ public class ElasticsearchEngineClientIT {
         .containsExactlyInAnyOrder(
             new IndexMappingProperty.Builder()
                 .name("hello")
-                .typeDefinition(Map.of("type", "text"))
+                .typeDefinition(
+                    Map.of("type", "text", "index", false, "eager_global_ordinals", true))
                 .build(),
             new IndexMappingProperty.Builder()
                 .name("world")
@@ -142,10 +174,31 @@ public class ElasticsearchEngineClientIT {
   }
 
   @Test
+  void shouldNotThrowErrorIfRetrievingMappingsWhereOnlySubsetOfIndicesExist() {
+    // given
+    final var index =
+        SchemaTestUtil.mockIndex("index_qualified_name", "alias", "index_name", "/mappings.json");
+
+    elsEngineClient.createIndex(index, new IndexSettings());
+
+    // when, tnen
+    assertThatNoException()
+        .isThrownBy(
+            () ->
+                elsEngineClient.getMappings(
+                    index.getFullQualifiedName() + "*,foo*", MappingSource.INDEX));
+  }
+
+  @Test
   void shouldRetrieveAllIndexTemplateMappingsWithImplementationAgnosticReturnType() {
     final var template =
         SchemaTestUtil.mockIndexTemplate(
-            "index_name", "index_pattern.*", "alias", List.of(), "template_name", "/mappings.json");
+            "index_name",
+            "index_pattern.*",
+            "alias",
+            List.of(),
+            "template_name",
+            "/mappings-complex-property.json");
 
     elsEngineClient.createIndexTemplate(template, new IndexSettings(), true);
 
@@ -157,7 +210,8 @@ public class ElasticsearchEngineClientIT {
         .containsExactlyInAnyOrder(
             new IndexMappingProperty.Builder()
                 .name("hello")
-                .typeDefinition(Map.of("type", "text"))
+                .typeDefinition(
+                    Map.of("type", "text", "index", false, "eager_global_ordinals", true))
                 .build(),
             new IndexMappingProperty.Builder()
                 .name("world")
@@ -199,7 +253,7 @@ public class ElasticsearchEngineClientIT {
     final var index =
         SchemaTestUtil.mockIndex("index_name", "alias", "index_name", "/mappings.json");
 
-    elsEngineClient.createIndex(index);
+    elsEngineClient.createIndex(index, new IndexSettings());
 
     final Map<String, String> newSettings = Map.of("index.lifecycle.name", "test");
     elsEngineClient.putSettings(List.of(index), newSettings);
@@ -212,6 +266,25 @@ public class ElasticsearchEngineClientIT {
   }
 
   @Test
+  void shouldSetReplicasAndShardsFromConfigurationDuringIndexCreation() throws IOException {
+    final var index =
+        SchemaTestUtil.mockIndex("index_name", "alias", "index_name", "/mappings.json");
+
+    final var settings = new IndexSettings();
+    settings.setNumberOfReplicas(5);
+    settings.setNumberOfShards(10);
+    elsEngineClient.createIndex(index, settings);
+
+    final var indices = elsClient.indices().get(req -> req.index("index_name"));
+
+    assertThat(indices.result().size()).isEqualTo(1);
+    assertThat(indices.result().get("index_name").settings().index().numberOfReplicas())
+        .isEqualTo("5");
+    assertThat(indices.result().get("index_name").settings().index().numberOfShards())
+        .isEqualTo("10");
+  }
+
+  @Test
   void shouldCreateIndexLifeCyclePolicy() throws IOException {
     elsEngineClient.putIndexLifeCyclePolicy("policy_name", "20d");
 
@@ -221,5 +294,106 @@ public class ElasticsearchEngineClientIT {
     assertThat(policy.result().get("policy_name").policy().phases().delete().minAge().time())
         .isEqualTo("20d");
     assertThat(policy.result().get("policy_name").policy().phases().delete().actions()).isNotNull();
+  }
+
+  @Test
+  void shouldAccountForAllPropertyFieldsWhenGetMappings() {
+    final var index =
+        SchemaTestUtil.mockIndex(
+            "index_qualified_name", "alias", "index_name", "/mappings-complex-property.json");
+
+    elsEngineClient.createIndex(index, new IndexSettings());
+
+    final var mappings = elsEngineClient.getMappings("*", MappingSource.INDEX);
+    assertThat(mappings.size()).isEqualTo(1);
+
+    final var createdIndexMappings = mappings.get(index.getFullQualifiedName());
+    final Map<String, Object> complexProperty =
+        (Map<String, Object>) createdIndexMappings.toMap().get("hello");
+    assertThat(complexProperty.get("type")).isEqualTo("text");
+    assertThat(complexProperty.get("index")).isEqualTo(false);
+    assertThat(complexProperty.get("eager_global_ordinals")).isEqualTo(true);
+  }
+
+  @Nested
+  class ImportersCompleted {
+    final String indexPrefix = "";
+    final int partitionId = 1;
+    final IndexDescriptor importPositionIndex = new ImportPositionIndex(indexPrefix, true);
+
+    @BeforeEach
+    void setup() throws IOException {
+      elsClient
+          .indices()
+          .delete(r -> r.index(importPositionIndex.getFullQualifiedName()).ignoreUnavailable(true));
+      elsEngineClient.createIndex(importPositionIndex, new IndexSettings());
+    }
+
+    @Test
+    void shouldReturnRecordReadersCompletedIfAllReadersCompletedFieldIsTrue() throws IOException {
+      // given, when
+      elsClient.bulk(createImportPositionDocuments(partitionId, importPositionIndex));
+      elsClient.indices().refresh();
+
+      // then
+      final var importersCompleted =
+          elsEngineClient.importersCompleted(partitionId, List.of(importPositionIndex));
+      assertThat(importersCompleted).isEqualTo(true);
+    }
+
+    @Test
+    void shouldReturnRecordReadersNotCompletedIfSomeReadersCompletedFieldIsFalse()
+        throws IOException {
+      elsClient.bulk(createImportPositionDocuments(partitionId, importPositionIndex));
+
+      final var decisionEntity =
+          new ImportPositionEntity().setPartitionId(partitionId).setAliasName("decision");
+
+      final var updateRequest =
+          new UpdateRequest.Builder<>()
+              .id(decisionEntity.getId())
+              .index(importPositionIndex.getFullQualifiedName())
+              .doc(Map.of("completed", false))
+              .build();
+
+      elsClient.update(updateRequest, ImportPositionEntity.class);
+
+      elsClient.indices().refresh();
+
+      final var importersCompleted =
+          elsEngineClient.importersCompleted(partitionId, List.of(importPositionIndex));
+      assertThat(importersCompleted).isEqualTo(false);
+    }
+
+    @Test
+    void shouldReturnImportersCompletedForFreshInstall() {
+      final var importersCompleted =
+          elsEngineClient.importersCompleted(partitionId, List.of(importPositionIndex));
+      assertThat(importersCompleted).isEqualTo(true);
+    }
+
+    private BulkRequest createImportPositionDocuments(
+        final int partitionId, final IndexDescriptor importPositionIndex) {
+      final BulkRequest.Builder br = new BulkRequest.Builder();
+      Stream.of("process-instance", "decision", "job")
+          .map(
+              type ->
+                  new ImportPositionEntity()
+                      .setCompleted(true)
+                      .setPartitionId(partitionId)
+                      .setAliasName(type))
+          .forEach(
+              entity -> {
+                br.operations(
+                    op ->
+                        op.index(
+                            i ->
+                                i.index(importPositionIndex.getFullQualifiedName())
+                                    .id(entity.getId())
+                                    .document(entity)));
+              });
+
+      return br.build();
+    }
   }
 }

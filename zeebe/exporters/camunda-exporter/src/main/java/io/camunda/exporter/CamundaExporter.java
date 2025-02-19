@@ -8,39 +8,51 @@
 package io.camunda.exporter;
 
 import static io.camunda.zeebe.protocol.record.ValueType.AUTHORIZATION;
+import static io.camunda.zeebe.protocol.record.ValueType.DECISION;
+import static io.camunda.zeebe.protocol.record.ValueType.DECISION_EVALUATION;
+import static io.camunda.zeebe.protocol.record.ValueType.DECISION_REQUIREMENTS;
+import static io.camunda.zeebe.protocol.record.ValueType.FORM;
+import static io.camunda.zeebe.protocol.record.ValueType.GROUP;
+import static io.camunda.zeebe.protocol.record.ValueType.INCIDENT;
+import static io.camunda.zeebe.protocol.record.ValueType.JOB;
+import static io.camunda.zeebe.protocol.record.ValueType.MAPPING;
+import static io.camunda.zeebe.protocol.record.ValueType.PROCESS;
+import static io.camunda.zeebe.protocol.record.ValueType.PROCESS_INSTANCE;
+import static io.camunda.zeebe.protocol.record.ValueType.PROCESS_MESSAGE_SUBSCRIPTION;
+import static io.camunda.zeebe.protocol.record.ValueType.ROLE;
+import static io.camunda.zeebe.protocol.record.ValueType.TENANT;
 import static io.camunda.zeebe.protocol.record.ValueType.USER;
+import static io.camunda.zeebe.protocol.record.ValueType.USER_TASK;
+import static io.camunda.zeebe.protocol.record.ValueType.VARIABLE;
+import static io.camunda.zeebe.protocol.record.ValueType.VARIABLE_DOCUMENT;
 
-import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch.core.BulkRequest;
-import co.elastic.clients.util.VisibleForTesting;
-import io.camunda.exporter.config.ElasticsearchExporterConfiguration;
-import io.camunda.exporter.exceptions.ElasticsearchExporterException;
+import io.camunda.exporter.adapters.ClientAdapter;
+import io.camunda.exporter.config.ConfigValidator;
+import io.camunda.exporter.config.ExporterConfiguration;
 import io.camunda.exporter.exceptions.PersistenceException;
-import io.camunda.exporter.handlers.AuthorizationRecordValueExportHandler;
-import io.camunda.exporter.handlers.UserRecordValueExportHandler;
-import io.camunda.exporter.schema.ElasticsearchEngineClient;
-import io.camunda.exporter.schema.ElasticsearchEngineClient.MappingSource;
-import io.camunda.exporter.schema.ElasticsearchSchemaManager;
-import io.camunda.exporter.schema.IndexMappingProperty;
-import io.camunda.exporter.schema.IndexSchemaValidator;
+import io.camunda.exporter.metrics.CamundaExporterMetrics;
+import io.camunda.exporter.schema.MappingSource;
 import io.camunda.exporter.schema.SchemaManager;
 import io.camunda.exporter.schema.SearchEngineClient;
-import io.camunda.exporter.store.ElasticsearchBatchRequest;
+import io.camunda.exporter.store.BatchRequest;
 import io.camunda.exporter.store.ExporterBatchWriter;
-import io.camunda.exporter.utils.ElasticsearchScriptBuilder;
-import io.camunda.search.connect.es.ElasticsearchConnector;
-import io.camunda.webapps.schema.descriptors.IndexDescriptor;
+import io.camunda.exporter.tasks.BackgroundTaskManager;
+import io.camunda.exporter.tasks.BackgroundTaskManagerFactory;
+import io.camunda.webapps.schema.descriptors.operate.index.ImportPositionIndex;
+import io.camunda.webapps.schema.descriptors.tasklist.index.TasklistImportPositionIndex;
 import io.camunda.zeebe.exporter.api.Exporter;
+import io.camunda.zeebe.exporter.api.ExporterException;
 import io.camunda.zeebe.exporter.api.context.Context;
 import io.camunda.zeebe.exporter.api.context.Context.RecordFilter;
 import io.camunda.zeebe.exporter.api.context.Controller;
 import io.camunda.zeebe.protocol.record.Record;
 import io.camunda.zeebe.protocol.record.RecordType;
 import io.camunda.zeebe.protocol.record.ValueType;
+import io.camunda.zeebe.util.SemanticVersion;
+import io.camunda.zeebe.util.VisibleForTesting;
 import java.time.Duration;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
+import org.agrona.CloseHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,192 +60,295 @@ public class CamundaExporter implements Exporter {
   private static final Logger LOG = LoggerFactory.getLogger(CamundaExporter.class);
 
   private Controller controller;
-  private ElasticsearchExporterConfiguration configuration;
-  private ElasticsearchClient client;
+  private ExporterConfiguration configuration;
+  private ClientAdapter clientAdapter;
   private ExporterBatchWriter writer;
   private long lastPosition = -1;
   private final ExporterResourceProvider provider;
+  private CamundaExporterMetrics metrics;
+  private BackgroundTaskManager taskManager;
+  private ExporterMetadata metadata;
+  private boolean exporterCanFlush = false;
+  private boolean zeebeIndicesExist = false;
+  private SearchEngineClient searchEngineClient;
+  private int partitionId;
 
   public CamundaExporter() {
-    this(new DefaultExporterResourceProvider());
+    // the metadata will be initialized on open
+    this(new DefaultExporterResourceProvider(), null);
   }
 
   @VisibleForTesting
   public CamundaExporter(final ExporterResourceProvider provider) {
+    this(provider, null);
+  }
+
+  @VisibleForTesting
+  public CamundaExporter(final ExporterResourceProvider provider, final ExporterMetadata metadata) {
     this.provider = provider;
+    this.metadata = metadata;
   }
 
   @Override
   public void configure(final Context context) {
-    configuration =
-        context.getConfiguration().instantiate(ElasticsearchExporterConfiguration.class);
-    provider.init(configuration);
-    // TODO validate configuration
-    context.setFilter(new ElasticsearchRecordFilter());
+    configuration = context.getConfiguration().instantiate(ExporterConfiguration.class);
+    ConfigValidator.validate(configuration);
+    context.setFilter(new CamundaExporterRecordFilter());
+    metrics = new CamundaExporterMetrics(context.getMeterRegistry());
+    clientAdapter = ClientAdapter.of(configuration);
+    if (metadata == null) {
+      metadata = new ExporterMetadata(clientAdapter.objectMapper());
+    }
+    partitionId = context.getPartitionId();
+    provider.init(
+        configuration,
+        clientAdapter.getExporterEntityCacheProvider(),
+        context.getMeterRegistry(),
+        metadata,
+        clientAdapter.objectMapper());
+
+    taskManager =
+        new BackgroundTaskManagerFactory(
+                context.getPartitionId(),
+                context.getConfiguration().getId().toLowerCase(),
+                configuration,
+                provider,
+                metrics,
+                context.getLogger(),
+                metadata)
+            .build();
     LOG.debug("Exporter configured with {}", configuration);
   }
 
   @Override
   public void open(final Controller controller) {
     this.controller = controller;
-    client = createClient();
-    final var searchEngineClient = new ElasticsearchEngineClient(client);
-    final var schemaManager = createSchemaManager(searchEngineClient);
-    final var schemaValidator = new IndexSchemaValidator(schemaManager);
+    searchEngineClient = clientAdapter.getSearchEngineClient();
+    final var schemaManager =
+        new SchemaManager(
+            searchEngineClient,
+            provider.getIndexDescriptors(),
+            provider.getIndexTemplateDescriptors(),
+            configuration,
+            clientAdapter.objectMapper());
 
-    schemaStartup(schemaManager, schemaValidator, searchEngineClient);
+    schemaManager.startup();
+
     writer = createBatchWriter();
 
-    scheduleDelayedFlush();
+    checkImportersCompletedAndReschedule();
+    controller.readMetadata().ifPresent(metadata::deserialize);
+    taskManager.start();
 
     LOG.info("Exporter opened");
   }
 
   @Override
   public void close() {
-    try {
-      flush();
-      updateLastExportedPosition();
-    } catch (final Exception e) {
-      LOG.warn("Failed to flush records before closing exporter.", e);
+    provider.close();
+
+    if (writer != null) {
+      try {
+        flush();
+        updateLastExportedPosition(lastPosition);
+      } catch (final Exception e) {
+        LOG.warn("Failed to flush records before closing exporter.", e);
+      }
     }
 
-    try {
-      client._transport().close();
-    } catch (final Exception e) {
-      LOG.warn("Failed to close elasticsearch client", e);
+    if (clientAdapter != null) {
+      try {
+        clientAdapter.close();
+      } catch (final Exception e) {
+        LOG.warn("Failed to close elasticsearch client", e);
+      }
     }
 
+    CloseHelper.close(error -> LOG.warn("Failed to close background tasks", error), taskManager);
     LOG.info("Exporter closed");
   }
 
   @Override
   public void export(final Record<?> record) {
-    writer.addRecord(record);
-    lastPosition = record.getPosition();
-    if (shouldFlush()) {
-      flush();
-      // Update the record counters only after the flush was successful. If the synchronous flush
-      // fails then the exporter will be invoked with the same record again.
-      updateLastExportedPosition();
-    }
-  }
 
-  private void schemaStartup(
-      final SchemaManager schemaManager,
-      final IndexSchemaValidator schemaValidator,
-      final SearchEngineClient searchEngineClient) {
-    if (!configuration.elasticsearch.isCreateSchema()) {
-      LOG.info(
-          "Will not make any changes to indices and index templates as [createSchema] is false");
+    final var recordVersion = getVersion(record.getBrokerVersion());
+
+    if (recordVersion.major() == 8 && recordVersion.minor() < 8) {
+      LOG.debug(
+          "Skip record with broker version '{}'. Last exported position will be updated to '{}'",
+          record.getBrokerVersion(),
+          record.getPosition());
+      updateLastExportedPosition(record.getPosition());
       return;
     }
 
-    final var newIndexProperties = validateIndices(schemaValidator, searchEngineClient);
-    final var newIndexTemplateProperties =
-        validateIndexTemplates(schemaValidator, searchEngineClient);
-    //  used to create any indices/templates which don't exist
-    schemaManager.initialiseResources();
+    if (configuration.getIndex().shouldWaitForImporters() && !exporterCanFlush) {
+      ensureCachedRecordsLessThanBulkSize(record);
 
-    //  used to update existing indices/templates
-    schemaManager.updateSchema(newIndexProperties);
-    schemaManager.updateSchema(newIndexTemplateProperties);
+      writer.addRecord(record);
 
-    if (configuration.elasticsearch.getRetention().isEnabled()) {
-      searchEngineClient.putIndexLifeCyclePolicy(
-          configuration.elasticsearch.getRetention().getPolicyName(),
-          configuration.elasticsearch.getRetention().getMinimumAge());
+      LOG.info(
+          "Waiting for importers to finish, cached record with key {} but did not flush",
+          record.getKey());
+      return;
+    }
 
-      final var lifecycleUpdate =
-          Map.of(
-              "index.lifecycle.name", configuration.elasticsearch.getRetention().getPolicyName());
+    if (writer.getBatchSize() == 0) {
+      metrics.startFlushLatencyMeasurement();
+    }
 
-      searchEngineClient.putSettings(
-          provider.getIndexDescriptors().stream().toList(), lifecycleUpdate);
+    // adding record is idempotent
+    writer.addRecord(record);
+
+    lastPosition = record.getPosition();
+
+    if (shouldFlush()) {
+      try (final var ignored = metrics.measureFlushDuration()) {
+        flush();
+        metrics.stopFlushLatencyMeasurement();
+      } catch (final ExporterException e) {
+        metrics.recordFailedFlush();
+        throw e;
+      }
+      // Update the record counters only after the flush was successful. If the synchronous flush
+      // fails then the exporter will be invoked with the same record again.
+      updateLastExportedPosition(lastPosition);
     }
   }
 
-  private Map<IndexDescriptor, Set<IndexMappingProperty>> validateIndices(
-      final IndexSchemaValidator schemaValidator, final SearchEngineClient searchEngineClient) {
-    final var currentIndices =
-        searchEngineClient.getMappings(
-            configuration.elasticsearch.getIndexPrefix() + "*", MappingSource.INDEX);
-
-    return schemaValidator.validateIndexMappings(currentIndices, provider.getIndexDescriptors());
+  @VisibleForTesting
+  ExporterMetadata getMetadata() {
+    return metadata;
   }
 
-  private Map<IndexDescriptor, Set<IndexMappingProperty>> validateIndexTemplates(
-      final IndexSchemaValidator schemaValidator, final SearchEngineClient searchEngineClient) {
-    final var currentTemplates = searchEngineClient.getMappings("*", MappingSource.INDEX_TEMPLATE);
+  private void ensureCachedRecordsLessThanBulkSize(final Record<?> record) {
+    final var maxCachedRecords = configuration.getBulk().getSize();
 
-    return schemaValidator.validateIndexMappings(
-        currentTemplates,
-        provider.getIndexTemplateDescriptors().stream()
-            .map(IndexDescriptor.class::cast)
-            .collect(Collectors.toSet()));
+    if (writer.getBatchSize() >= maxCachedRecords) {
+      final var warnMsg =
+          String.format(
+              "Reached the max bulk size amount of cached records [%d] while waiting for importers to finish, retrying export for record at position [%s]",
+              maxCachedRecords, record.getPosition());
+      LOG.warn(warnMsg);
+      throw new IllegalStateException(warnMsg);
+    }
   }
 
-  private SchemaManager createSchemaManager(final SearchEngineClient searchEngineClient) {
-    return new ElasticsearchSchemaManager(
-        searchEngineClient,
-        provider.getIndexDescriptors(),
-        provider.getIndexTemplateDescriptors(),
-        configuration.elasticsearch);
-  }
-
-  private ElasticsearchClient createClient() {
-    final var connector = new ElasticsearchConnector(configuration.elasticsearch.getConnect());
-    return connector.createClient();
+  private SemanticVersion getVersion(final String version) {
+    return SemanticVersion.parse(version)
+        .orElseThrow(
+            () ->
+                new IllegalArgumentException(
+                    "Unsupported record broker version: ["
+                        + version
+                        + "] Must be a semantic version."));
   }
 
   private boolean shouldFlush() {
-    // FIXME should compare against both batch size and memory limit
-    return writer.getBatchSize() >= configuration.bulk.getSize();
+    return writer.getBatchSize() >= configuration.getBulk().getSize();
   }
 
   private ExporterBatchWriter createBatchWriter() {
-    // TODO register all handlers here
-    return ExporterBatchWriter.Builder.begin()
-        .withHandler(new UserRecordValueExportHandler())
-        .withHandler(new AuthorizationRecordValueExportHandler())
-        .build();
+    final var builder = ExporterBatchWriter.Builder.begin();
+    provider.getExportHandlers().forEach(builder::withHandler);
+    builder.withCustomErrorHandlers(provider.getCustomErrorHandlers());
+    return builder.build();
   }
 
   private void scheduleDelayedFlush() {
     controller.scheduleCancellableTask(
-        Duration.ofSeconds(configuration.bulk.getDelay()), this::flushAndReschedule);
+        Duration.ofSeconds(configuration.getBulk().getDelay()), this::flushAndReschedule);
   }
 
   private void flushAndReschedule() {
     try {
       flush();
-      updateLastExportedPosition();
+      updateLastExportedPosition(lastPosition);
     } catch (final Exception e) {
       LOG.warn("Unexpected exception occurred on periodically flushing bulk, will retry later.", e);
     }
     scheduleDelayedFlush();
   }
 
-  private void flush() {
+  private void scheduleImportersCompletedCheck() {
+    controller.scheduleCancellableTask(
+        Duration.ofSeconds(10), this::checkImportersCompletedAndReschedule);
+  }
+
+  private void checkImportersCompletedAndReschedule() {
+    if (!configuration.getIndex().shouldWaitForImporters()) {
+      LOG.debug(
+          "Waiting for importers to complete is disabled, thus scheduling delayed flush regardless of importer state.");
+      scheduleDelayedFlush();
+      return;
+    }
+    if (!exporterCanFlush) {
+      scheduleImportersCompletedCheck();
+    }
     try {
-      // TODO revisit the need to pass the BulkRequestBuilder and the ElasticsearchScriptBuilder as
-      // params here
-      final ElasticsearchBatchRequest batchRequest =
-          new ElasticsearchBatchRequest(
-              client, new BulkRequest.Builder(), new ElasticsearchScriptBuilder());
-      writer.flush(batchRequest);
-    } catch (final PersistenceException ex) {
-      throw new ElasticsearchExporterException(ex.getMessage(), ex);
+      final var importPositionIndices =
+          provider.getIndexDescriptors().stream()
+              .filter(
+                  d -> d instanceof ImportPositionIndex || d instanceof TasklistImportPositionIndex)
+              .toList();
+
+      if (!zeebeIndicesExist) {
+        zeebeIndicesExist =
+            !searchEngineClient
+                .getMappings(
+                    configuration.getIndex().getZeebeIndexPrefix() + "*", MappingSource.INDEX)
+                .isEmpty();
+      }
+
+      exporterCanFlush =
+          !zeebeIndicesExist
+              || searchEngineClient.importersCompleted(partitionId, importPositionIndices);
+    } catch (final Exception e) {
+      LOG.warn("Unexpected exception occurred checking importers completed, will retry later.", e);
+    }
+
+    if (exporterCanFlush) {
+      scheduleDelayedFlush();
     }
   }
 
-  private void updateLastExportedPosition() {
-    controller.updateLastExportedRecordPosition(lastPosition);
+  private void flush() {
+    try {
+      metrics.recordBulkSize(writer.getBatchSize());
+      final BatchRequest batchRequest = clientAdapter.createBatchRequest();
+      writer.flush(batchRequest);
+
+    } catch (final PersistenceException ex) {
+      throw new ExporterException(ex.getMessage(), ex);
+    }
   }
 
-  private record ElasticsearchRecordFilter() implements RecordFilter {
-    // TODO include other value types to export
-    private static final Set<ValueType> VALUE_TYPES_2_EXPORT = Set.of(USER, AUTHORIZATION);
+  private void updateLastExportedPosition(final long lastPosition) {
+    final var serialized = metadata.serialize();
+    controller.updateLastExportedRecordPosition(lastPosition, serialized);
+  }
+
+  private record CamundaExporterRecordFilter() implements RecordFilter {
+    private static final Set<ValueType> VALUE_TYPES_2_EXPORT =
+        Set.of(
+            USER,
+            GROUP,
+            MAPPING,
+            AUTHORIZATION,
+            TENANT,
+            DECISION,
+            DECISION_REQUIREMENTS,
+            PROCESS_INSTANCE,
+            ROLE,
+            VARIABLE,
+            VARIABLE_DOCUMENT,
+            PROCESS_MESSAGE_SUBSCRIPTION,
+            JOB,
+            INCIDENT,
+            DECISION_EVALUATION,
+            PROCESS,
+            FORM,
+            USER_TASK);
 
     @Override
     public boolean acceptType(final RecordType recordType) {

@@ -17,6 +17,11 @@ package io.camunda.zeebe.client.api.search.sort;
 
 import io.camunda.zeebe.client.api.search.query.TypedSearchQueryRequest.SearchRequestSort;
 
+/**
+ * @deprecated since 8.8 for removal in 8.9, replaced by {@link
+ *     io.camunda.client.api.search.sort.FlownodeInstanceSort}
+ */
+@Deprecated
 public interface FlownodeInstanceSort extends SearchRequestSort<FlownodeInstanceSort> {
 
   FlownodeInstanceSort key();
@@ -25,13 +30,13 @@ public interface FlownodeInstanceSort extends SearchRequestSort<FlownodeInstance
 
   FlownodeInstanceSort processDefinitionKey();
 
-  FlownodeInstanceSort bpmnProcessId();
-
   FlownodeInstanceSort startDate();
 
   FlownodeInstanceSort endDate();
 
   FlownodeInstanceSort flowNodeId();
+
+  FlownodeInstanceSort flowNodeName();
 
   FlownodeInstanceSort type();
 

@@ -14,6 +14,24 @@ public final class SortOptionBuilders {
 
   private SortOptionBuilders() {}
 
+  public static UsageMetricsSort.Builder usageMetrics() {
+    return new UsageMetricsSort.Builder();
+  }
+
+  public static UsageMetricsSort usageMetrics(
+      final Function<UsageMetricsSort.Builder, ObjectBuilder<UsageMetricsSort>> fn) {
+    return fn.apply(usageMetrics()).build();
+  }
+
+  public static ProcessDefinitionSort.Builder processDefinition() {
+    return new ProcessDefinitionSort.Builder();
+  }
+
+  public static ProcessDefinitionSort processDefinition(
+      final Function<ProcessDefinitionSort.Builder, ObjectBuilder<ProcessDefinitionSort>> fn) {
+    return fn.apply(processDefinition()).build();
+  }
+
   public static ProcessInstanceSort.Builder processInstance() {
     return new ProcessInstanceSort.Builder();
   }
@@ -49,6 +67,22 @@ public final class SortOptionBuilders {
 
   public static UserSort.Builder user() {
     return new UserSort.Builder();
+  }
+
+  public static MappingSort.Builder mapping() {
+    return new MappingSort.Builder();
+  }
+
+  public static RoleSort.Builder role() {
+    return new RoleSort.Builder();
+  }
+
+  public static TenantSort.Builder tenant() {
+    return new TenantSort.Builder();
+  }
+
+  public static GroupSort.Builder group() {
+    return new GroupSort.Builder();
   }
 
   public static AuthorizationSort.Builder authorization() {
@@ -88,6 +122,24 @@ public final class SortOptionBuilders {
 
   public static UserSort user(final Function<UserSort.Builder, ObjectBuilder<UserSort>> fn) {
     return fn.apply(user()).build();
+  }
+
+  public static MappingSort mapping(
+      final Function<MappingSort.Builder, ObjectBuilder<MappingSort>> fn) {
+    return fn.apply(mapping()).build();
+  }
+
+  public static RoleSort role(final Function<RoleSort.Builder, ObjectBuilder<RoleSort>> fn) {
+    return fn.apply(role()).build();
+  }
+
+  public static TenantSort tenant(
+      final Function<TenantSort.Builder, ObjectBuilder<TenantSort>> fn) {
+    return fn.apply(tenant()).build();
+  }
+
+  public static GroupSort group(final Function<GroupSort.Builder, ObjectBuilder<GroupSort>> fn) {
+    return fn.apply(group()).build();
   }
 
   public static FormSort.Builder form() {

@@ -7,16 +7,14 @@
  */
 package io.camunda.tasklist.es;
 
-import static io.camunda.tasklist.schema.IndexMapping.IndexMappingProperty.createIndexMappingProperty;
 import static io.camunda.tasklist.util.CollectionUtil.getOrDefaultForNullValue;
+import static io.camunda.tasklist.util.ElasticsearchUtil.LENIENT_EXPAND_OPEN_FORBID_NO_INDICES_IGNORE_THROTTLED;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.tasklist.data.conditionals.ElasticSearchCondition;
 import io.camunda.tasklist.exceptions.TasklistRuntimeException;
 import io.camunda.tasklist.property.TasklistProperties;
-import io.camunda.tasklist.schema.IndexMapping;
 import io.camunda.tasklist.store.elasticsearch.dao.response.TaskResponse;
 import io.camunda.tasklist.util.CollectionUtil;
 import java.io.IOException;
@@ -54,7 +52,6 @@ import org.elasticsearch.action.search.ClearScrollRequest;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchScrollRequest;
-import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.client.GetAliasesResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
@@ -65,7 +62,6 @@ import org.elasticsearch.client.indexlifecycle.PutLifecyclePolicyRequest;
 import org.elasticsearch.client.indices.*;
 import org.elasticsearch.cluster.health.ClusterHealthStatus;
 import org.elasticsearch.cluster.metadata.AliasMetadata;
-import org.elasticsearch.cluster.metadata.MappingMetadata;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.settings.Settings;
@@ -405,7 +401,7 @@ public class RetryElasticsearchClient {
         .indices()
         .exists(
             new GetIndexRequest(indexPattern)
-                .indicesOptions(IndicesOptions.fromOptions(true, false, true, false)),
+                .indicesOptions(LENIENT_EXPAND_OPEN_FORBID_NO_INDICES_IGNORE_THROTTLED),
             requestOptions);
   }
 
@@ -825,49 +821,6 @@ public class RetryElasticsearchClient {
         () ->
             esClient.indexLifecycle().getLifecyclePolicy(getLifecyclePolicyRequest, requestOptions),
         null);
-  }
-
-  public Map<String, IndexMapping> getIndexMappings(final String namePattern) {
-    return executeWithRetries(
-        "Get indices mappings for " + namePattern,
-        () -> {
-          try {
-            final Map<String, IndexMapping> mappingsMap = new HashMap<>();
-            final Map<String, MappingMetadata> mappings =
-                esClient
-                    .indices()
-                    .getMapping(
-                        new GetMappingsRequest().indices(namePattern), RequestOptions.DEFAULT)
-                    .mappings();
-            for (final Map.Entry<String, MappingMetadata> entry : mappings.entrySet()) {
-              final Map<String, Object> mappingMetadata =
-                  objectMapper.readValue(
-                      entry.getValue().source().string(),
-                      new TypeReference<HashMap<String, Object>>() {});
-              final Map<String, Object> properties =
-                  (Map<String, Object>) mappingMetadata.getOrDefault("properties", new HashMap<>());
-              final Map<String, Object> metaProperties =
-                  (Map<String, Object>) mappingMetadata.getOrDefault("_meta", new HashMap<>());
-              final String dynamic = (String) mappingMetadata.get("dynamic");
-              mappingsMap.put(
-                  entry.getKey(),
-                  new IndexMapping()
-                      .setIndexName(entry.getKey())
-                      .setDynamic(dynamic)
-                      .setProperties(
-                          properties.entrySet().stream()
-                              .map(p -> createIndexMappingProperty(p))
-                              .collect(Collectors.toSet()))
-                      .setMetaProperties(metaProperties));
-            }
-            return mappingsMap;
-          } catch (final ElasticsearchException e) {
-            if (e.status().equals(RestStatus.NOT_FOUND)) {
-              return Map.of();
-            }
-            throw e;
-          }
-        });
   }
 
   public void putMapping(final PutMappingRequest request) {

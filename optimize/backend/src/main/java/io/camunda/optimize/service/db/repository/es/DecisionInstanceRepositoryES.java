@@ -24,25 +24,38 @@ import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCon
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import lombok.AllArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@AllArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class DecisionInstanceRepositoryES implements DecisionInstanceRepository {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(DecisionInstanceRepositoryES.class);
   private final OptimizeElasticsearchClient esClient;
   private final ConfigurationService configurationService;
   private final ObjectMapper objectMapper;
   private final DateTimeFormatter dateTimeFormatter;
   private final TaskRepositoryES taskRepositoryES;
 
+  public DecisionInstanceRepositoryES(
+      final OptimizeElasticsearchClient esClient,
+      final ConfigurationService configurationService,
+      final ObjectMapper objectMapper,
+      final DateTimeFormatter dateTimeFormatter,
+      final TaskRepositoryES taskRepositoryES) {
+    this.esClient = esClient;
+    this.configurationService = configurationService;
+    this.objectMapper = objectMapper;
+    this.dateTimeFormatter = dateTimeFormatter;
+    this.taskRepositoryES = taskRepositoryES;
+  }
+
   @Override
   public void importDecisionInstances(
-      final String importItemName, List<DecisionInstanceDto> decisionInstanceDtos) {
+      final String importItemName, final List<DecisionInstanceDto> decisionInstanceDtos) {
     esClient.doImportBulkRequestWithList(
         importItemName,
         decisionInstanceDtos,
@@ -53,7 +66,7 @@ public class DecisionInstanceRepositoryES implements DecisionInstanceRepository 
   @Override
   public void deleteDecisionInstancesByDefinitionKeyAndEvaluationDateOlderThan(
       final String decisionDefinitionKey, final OffsetDateTime evaluationDate) {
-    Query query =
+    final Query query =
         Query.of(
             q ->
                 q.bool(

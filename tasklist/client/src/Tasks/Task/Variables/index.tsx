@@ -15,8 +15,7 @@ import {match, Pattern} from 'ts-pattern';
 import {Button, Heading, type InlineLoadingProps, Layer} from '@carbon/react';
 import {Information, Add} from '@carbon/react/icons';
 import {C3EmptyState} from '@camunda/camunda-composite-components';
-import {Variable, CurrentUser, Task} from 'modules/types';
-import {usePermissions} from 'modules/hooks/usePermissions';
+import type {Variable, CurrentUser, Task} from 'modules/types';
 import {
   ScrollableContent,
   TaskDetailsContainer,
@@ -32,9 +31,10 @@ import {getVariableFieldName} from './getVariableFieldName';
 import {VariableEditor} from './VariableEditor';
 import {IconButton} from './IconButton';
 import {ResetForm} from './ResetForm';
-import {FormValues} from './types';
+import type {FormValues} from './types';
 import styles from './styles.module.scss';
 import cn from 'classnames';
+import {completionErrorMap} from 'modules/mutations/useCompleteTask';
 
 const JSONEditorModal = lazy(async () => {
   const [{loadMonaco}, {JSONEditorModal}] = await Promise.all([
@@ -64,7 +64,6 @@ const Variables: React.FC<Props> = ({
 }) => {
   const formRef = useRef<HTMLFormElement | null>(null);
   const {assignee, taskState} = task;
-  const {hasPermission} = usePermissions(['write']);
   const {t} = useTranslation();
   const {
     data,
@@ -85,10 +84,7 @@ const Variables: React.FC<Props> = ({
   const [submissionState, setSubmissionState] =
     useState<NonNullable<InlineLoadingProps['status']>>('inactive');
   const canCompleteTask =
-    user.userId === assignee &&
-    taskState === 'CREATED' &&
-    hasPermission &&
-    status === 'success';
+    user.userId === assignee && taskState === 'CREATED' && status === 'success';
   const hasEmptyNewVariable = (values: FormValues) =>
     values.newVariables?.some((variable) => variable === undefined);
   const variables = data ?? [];
@@ -125,6 +121,13 @@ const Variables: React.FC<Props> = ({
 
           setSubmissionState('finished');
         } catch (error) {
+          if (
+            error instanceof Error &&
+            error.name === completionErrorMap.taskProcessingTimeout
+          ) {
+            onSubmitFailure(error);
+            return;
+          }
           onSubmitFailure(error as Error);
           setSubmissionState('error');
         }

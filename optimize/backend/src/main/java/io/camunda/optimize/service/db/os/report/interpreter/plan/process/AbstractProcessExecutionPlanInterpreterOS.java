@@ -9,8 +9,8 @@ package io.camunda.optimize.service.db.os.report.interpreter.plan.process;
 
 import static io.camunda.optimize.dto.optimize.ReportConstants.APPLIED_TO_ALL_DEFINITIONS;
 import static io.camunda.optimize.service.db.DatabaseConstants.PROCESS_INSTANCE_MULTI_ALIAS;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.matchAll;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.not;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.matchAll;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.not;
 
 import io.camunda.optimize.dto.optimize.query.report.single.ReportDataDefinitionDto;
 import io.camunda.optimize.dto.optimize.query.report.single.process.ProcessReportDataDto;
@@ -44,7 +44,8 @@ public abstract class AbstractProcessExecutionPlanInterpreterOS
   @Override
   public Optional<MinMaxStatDto> getGroupByMinMaxStats(
       final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
-    if (getGroupByInterpreter() instanceof ProcessGroupByInterpreterOS processGroupByInterpreter) {
+    if (getGroupByInterpreter()
+        instanceof final ProcessGroupByInterpreterOS processGroupByInterpreter) {
       return processGroupByInterpreter.getMinMaxStats(
           context, baseQueryBuilder(context).build().toQuery());
     } else {

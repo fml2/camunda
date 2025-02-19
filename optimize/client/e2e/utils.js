@@ -35,7 +35,8 @@ export async function login(t, userHandle = 'user1') {
     .maximizeWindow()
     .typeText('input[name="username"]', user.username)
     .typeText('input[name="password"]', user.username)
-    .click('[type="submit"]');
+    .click('[type="submit"]')
+    .wait(1000);
 }
 
 export function getUser(t, userHandle) {
@@ -165,7 +166,7 @@ export async function addReportToDashboard(t, name) {
 }
 
 export async function bulkDeleteAllItems(t) {
-  await t.click(Homepage.homepageLink);
+  await t.click(Common.collectionsPage);
   await t.click(Common.selectAllCheckbox);
   await t.click(Common.bulkDelete);
   await t.click(Common.modalConfirmButton);
@@ -173,7 +174,9 @@ export async function bulkDeleteAllItems(t) {
 
 export async function toggleReportAutoPreviewUpdate(t) {
   const isToggleOn = await Selector('.updatePreview button')['aria-checked'];
-  !isToggleOn && (await t.click('.updatePreview'));
+  if (!isToggleOn) {
+    await t.click('.updatePreview');
+  }
 }
 
 export async function addEditEntityDescription(t, description, screenshotPath) {

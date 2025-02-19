@@ -25,18 +25,23 @@ import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCon
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class ProcessGroupByNoneInterpreterES extends AbstractProcessGroupByInterpreterES
     implements ProcessGroupByInterpreterES {
+
   private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
-  @Getter private final ProcessViewInterpreterFacadeES viewInterpreter;
+  private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  public ProcessGroupByNoneInterpreterES(
+      final ProcessDistributedByInterpreterFacadeES distributedByInterpreter,
+      final ProcessViewInterpreterFacadeES viewInterpreter) {
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Set<ProcessGroupBy> getSupportedGroupBys() {
@@ -58,7 +63,7 @@ public class ProcessGroupByNoneInterpreterES extends AbstractProcessGroupByInter
       final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
     final List<CompositeCommandResult.DistributedByResult> distributions =
         distributedByInterpreter.retrieveResult(response, response.aggregations(), context);
-    CompositeCommandResult.GroupByResult groupByResult =
+    final CompositeCommandResult.GroupByResult groupByResult =
         CompositeCommandResult.GroupByResult.createGroupByNone(distributions);
     compositeCommandResult.setGroup(groupByResult);
   }
@@ -67,5 +72,9 @@ public class ProcessGroupByNoneInterpreterES extends AbstractProcessGroupByInter
   protected DistributedByInterpreterES<ProcessReportDataDto, ProcessExecutionPlan>
       getDistributedByInterpreter() {
     return distributedByInterpreter;
+  }
+
+  public ProcessViewInterpreterFacadeES getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }

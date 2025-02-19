@@ -45,17 +45,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
-import lombok.AllArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@AllArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class DurationAggregationServiceES extends DurationAggregationService {
 
   private final MinMaxStatsServiceES minMaxStatsService;
   private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
+
+  public DurationAggregationServiceES(
+      final MinMaxStatsServiceES minMaxStatsService,
+      final ProcessDistributedByInterpreterFacadeES distributedByInterpreter) {
+    this.minMaxStatsService = minMaxStatsService;
+    this.distributedByInterpreter = distributedByInterpreter;
+  }
 
   public Optional<Map<String, Aggregation.Builder.ContainerBuilder>>
       createLimitedGroupByScriptedDurationAggregation(
@@ -134,7 +139,8 @@ public class DurationAggregationServiceES extends DurationAggregationService {
             .map(aggregations -> aggregations.get(DURATION_HISTOGRAM_AGGREGATION).histogram());
 
     if (histogramAggregationResult.isPresent()) {
-      for (HistogramBucket durationBucket : histogramAggregationResult.get().buckets().array()) {
+      for (final HistogramBucket durationBucket :
+          histogramAggregationResult.get().buckets().array()) {
         final List<CompositeCommandResult.DistributedByResult> distributions =
             distributedByInterpreter.retrieveResult(
                 response, durationBucket.aggregations(), context);

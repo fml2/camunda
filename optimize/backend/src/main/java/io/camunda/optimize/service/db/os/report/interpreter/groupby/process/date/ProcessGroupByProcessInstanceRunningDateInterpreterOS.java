@@ -35,8 +35,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
 import org.opensearch.client.opensearch._types.aggregations.FiltersAggregate;
@@ -46,15 +44,28 @@ import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class ProcessGroupByProcessInstanceRunningDateInterpreterOS
     extends AbstractProcessGroupByInterpreterOS {
+
   private final DateTimeFormatter formatter;
   private final DateAggregationServiceOS dateAggregationService;
   private final MinMaxStatsServiceOS minMaxStatsService;
-  @Getter private final ProcessDistributedByInterpreterFacadeOS distributedByInterpreter;
-  @Getter private final ProcessViewInterpreterFacadeOS viewInterpreter;
+  private final ProcessDistributedByInterpreterFacadeOS distributedByInterpreter;
+  private final ProcessViewInterpreterFacadeOS viewInterpreter;
+
+  public ProcessGroupByProcessInstanceRunningDateInterpreterOS(
+      final DateTimeFormatter formatter,
+      final DateAggregationServiceOS dateAggregationService,
+      final MinMaxStatsServiceOS minMaxStatsService,
+      final ProcessDistributedByInterpreterFacadeOS distributedByInterpreter,
+      final ProcessViewInterpreterFacadeOS viewInterpreter) {
+    this.formatter = formatter;
+    this.dateAggregationService = dateAggregationService;
+    this.minMaxStatsService = minMaxStatsService;
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Set<ProcessGroupBy> getSupportedGroupBys() {
@@ -119,12 +130,12 @@ public class ProcessGroupByProcessInstanceRunningDateInterpreterOS
     if (!aggregations.containsKey(FILTER_LIMITED_AGGREGATION)) {
       return List.of();
     } else {
-      FiltersAggregate agg = aggregations.get(FILTER_LIMITED_AGGREGATION).filters();
+      final FiltersAggregate agg = aggregations.get(FILTER_LIMITED_AGGREGATION).filters();
 
       return agg.buckets().keyed().entrySet().stream()
           .map(
               entry -> {
-                String key =
+                final String key =
                     formatToCorrectTimezone(entry.getKey(), context.getTimezone(), formatter);
                 final List<CompositeCommandResult.DistributedByResult> distributions =
                     getDistributedByInterpreter()
@@ -133,5 +144,13 @@ public class ProcessGroupByProcessInstanceRunningDateInterpreterOS
               })
           .toList();
     }
+  }
+
+  public ProcessDistributedByInterpreterFacadeOS getDistributedByInterpreter() {
+    return this.distributedByInterpreter;
+  }
+
+  public ProcessViewInterpreterFacadeOS getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }

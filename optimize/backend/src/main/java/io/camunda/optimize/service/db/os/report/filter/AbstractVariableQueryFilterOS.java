@@ -15,11 +15,13 @@ import io.camunda.optimize.service.db.filter.util.OperatorMultipleValuesVariable
 import io.camunda.optimize.service.exceptions.OptimizeRuntimeException;
 import java.time.ZoneId;
 import java.util.List;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
+import org.slf4j.Logger;
 
-@Slf4j
 public abstract class AbstractVariableQueryFilterOS {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(AbstractVariableQueryFilterOS.class);
 
   protected abstract Query createContainsOneOfTheGivenStringsQuery(
       final StringVariableFilterDataDto dto);
@@ -53,7 +55,7 @@ public abstract class AbstractVariableQueryFilterOS {
           String.format(
               "String variable operator [%s] is not supported!",
               stringVarDto.getData().getOperator().getId());
-      log.debug(message);
+      LOG.debug(message);
       throw new OptimizeRuntimeException(message);
     }
   }

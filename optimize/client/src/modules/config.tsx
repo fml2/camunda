@@ -8,16 +8,10 @@
 
 import {ReactNode, createContext, useEffect, useState} from 'react';
 import {Loading} from '@carbon/react';
+import { getFullURL } from './api';
 
 import {get, ErrorResponse} from 'request';
 import {showError} from 'notifications';
-
-type WebappEndpoints = {
-  [key: string]: {
-    endpoint: string;
-    engineName: string;
-  };
-};
 
 type WebappLinks = {
   [key: string]: string;
@@ -49,7 +43,6 @@ export type UiConfig = {
   optimizeDocsVersion: string;
   optimizeProfile: 'cloud' | 'ccsm';
   enterpriseMode: boolean;
-  webappsEndpoints: WebappEndpoints;
   webappsLinks: WebappLinks;
   webhooks: string[];
   mixpanel: MixpanelConfig;
@@ -63,6 +56,8 @@ export type UiConfig = {
   userTaskAssigneeAnalyticsEnabled: boolean;
   licenseType: 'production' | 'saas' | 'unknown';
   validLicense: boolean;
+  commercial: boolean;
+  expiresAt: string | null;
 };
 
 let globalConfig: UiConfig;
@@ -79,7 +74,7 @@ export function ConfigProvider({children}: {children: ReactNode}): JSX.Element {
 
   const loadConfig = async () => {
     try {
-      const response = await get('api/ui-configuration');
+      const response = await get(getFullURL('api/ui-configuration'));
       const config = await response.json();
 
       setConfig(config);
@@ -119,7 +114,6 @@ export const isSharingEnabled = createAccessorFunction<boolean>('sharingEnabled'
 export const areTenantsAvailable = createAccessorFunction<boolean>('tenantsAvailable');
 export const getOptimizeVersion = createAccessorFunction<string>('optimizeVersion');
 export const getDocsVersion = createAccessorFunction<string>('optimizeDocsVersion');
-export const getWebappEndpoints = createAccessorFunction<WebappEndpoints>('webappsEndpoints');
 export const getWebappLinks = createAccessorFunction<WebappLinks>('webappsLinks');
 export const getWebhooks = createAccessorFunction<string[]>('webhooks');
 export const getMixpanelConfig = createAccessorFunction<MixpanelConfig>('mixpanel');

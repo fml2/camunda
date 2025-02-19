@@ -15,11 +15,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.camunda.exporter.entities.TestExporterEntity;
+import io.camunda.exporter.errorhandling.Error;
 import io.camunda.exporter.exceptions.PersistenceException;
 import io.camunda.exporter.utils.OpensearchScriptBuilder;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,11 +39,13 @@ import org.opensearch.client.opensearch.core.BulkResponse;
 import org.opensearch.client.opensearch.core.bulk.BulkOperation;
 import org.opensearch.client.opensearch.core.bulk.BulkResponseItem;
 import org.opensearch.client.opensearch.core.bulk.IndexOperation;
+import org.opensearch.client.opensearch.core.bulk.OperationType;
 
 class OpensearchBatchRequestTest {
 
   private static final String ID = "id";
   private static final String INDEX = "index";
+  private static final String INDEX_WITH_HANDLER = "indexWithHandler";
   private OpensearchBatchRequest batchRequest;
   private OpenSearchClient osClient;
   private Builder requestBuilder;
@@ -308,6 +312,57 @@ class OpensearchBatchRequestTest {
   }
 
   @Test
+  void shouldDeleteEntity() throws IOException, PersistenceException {
+    // Given
+    final TestExporterEntity entity = new TestExporterEntity().setId(ID);
+
+    // When
+    batchRequest.delete(INDEX, ID);
+    batchRequest.execute();
+
+    // Then
+    final ArgumentCaptor<BulkRequest> captor = ArgumentCaptor.forClass(BulkRequest.class);
+    verify(osClient).bulk(captor.capture());
+
+    // verify that an index operation is added
+    final List<BulkOperation> operations = captor.getValue().operations();
+    assertThat(operations).hasSize(1);
+
+    final var bulkOperation = operations.getFirst();
+    assertThat(bulkOperation.isDelete()).isTrue();
+
+    final var delete = bulkOperation.delete();
+    assertThat(delete.index()).isEqualTo(INDEX);
+    assertThat(delete.id()).isEqualTo(ID);
+  }
+
+  @Test
+  void shouldDeleteEntityWithRouting() throws IOException, PersistenceException {
+    // given
+    final String routing = "routing";
+
+    // when
+    batchRequest.deleteWithRouting(INDEX, ID, routing);
+    batchRequest.execute();
+
+    // then
+    final ArgumentCaptor<BulkRequest> captor = ArgumentCaptor.forClass(BulkRequest.class);
+    verify(osClient).bulk(captor.capture());
+
+    // verify that an index operation is added
+    final List<BulkOperation> operations = captor.getValue().operations();
+    assertThat(operations).hasSize(1);
+
+    final var bulkOperation = operations.getFirst();
+    assertThat(bulkOperation.isDelete()).isTrue();
+
+    final var delete = bulkOperation.delete();
+    assertThat(delete.index()).isEqualTo(INDEX);
+    assertThat(delete.id()).isEqualTo(ID);
+    assertThat(delete.routing()).isEqualTo(routing);
+  }
+
+  @Test
   void shouldExecuteWithMultipleOperationsInBatch() throws PersistenceException, IOException {
     // Given
     final TestExporterEntity entity = new TestExporterEntity().setId(ID);
@@ -382,5 +437,41 @@ class OpensearchBatchRequestTest {
     // Then
     assertThatThrownBy(callable).isInstanceOf(PersistenceException.class);
     verify(osClient).bulk(any(BulkRequest.class));
+  }
+
+  @Test
+  void shouldUseCustomErrorHandlerIfProvided() throws IOException {
+    // Given
+    final TestExporterEntity entity = new TestExporterEntity().setId(ID);
+    final OperationType operationType = OperationType.Update;
+    final int notFound = 404;
+
+    final BulkResponseItem item = mock(BulkResponseItem.class);
+    when(item.id()).thenReturn(ID);
+    when(item.operationType()).thenReturn(operationType);
+    when(item.index()).thenReturn(INDEX_WITH_HANDLER);
+    when(item.status()).thenReturn(notFound);
+    when(item.error())
+        .thenReturn(
+            new ErrorCause.Builder().type("document_missing_exception").reason("error").build());
+
+    final BulkResponse bulkResponse = mock(BulkResponse.class);
+    when(bulkResponse.items()).thenReturn(List.of(item));
+
+    when(osClient.bulk(any(BulkRequest.class))).thenReturn(bulkResponse);
+    final BiConsumer<String, Error> errorHandler = mock(BiConsumer.class);
+
+    final String message =
+        String.format(
+            "%s failed for type [%s] and id [%s]: %s",
+            item.operationType(), item.index(), item.id(), item.error().reason());
+
+    // When
+    batchRequest.add(INDEX_WITH_HANDLER, entity);
+    batchRequest.execute(errorHandler);
+
+    // Then
+    verify(errorHandler)
+        .accept(INDEX_WITH_HANDLER, new Error(message, item.error().type(), notFound));
   }
 }

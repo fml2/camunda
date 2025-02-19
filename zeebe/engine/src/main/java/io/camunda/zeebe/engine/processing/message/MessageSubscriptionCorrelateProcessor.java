@@ -7,6 +7,7 @@
  */
 package io.camunda.zeebe.engine.processing.message;
 
+import io.camunda.zeebe.engine.processing.ExcludeAuthorizationCheck;
 import io.camunda.zeebe.engine.processing.message.command.SubscriptionCommandSender;
 import io.camunda.zeebe.engine.processing.streamprocessor.TypedRecordProcessor;
 import io.camunda.zeebe.engine.processing.streamprocessor.writers.StateWriter;
@@ -27,12 +28,20 @@ import io.camunda.zeebe.stream.api.records.TypedRecord;
 import io.camunda.zeebe.util.buffer.BufferUtil;
 import java.time.InstantSource;
 
+@ExcludeAuthorizationCheck
 public final class MessageSubscriptionCorrelateProcessor
     implements TypedRecordProcessor<MessageSubscriptionRecord> {
 
   private static final String NO_SUBSCRIPTION_FOUND_MESSAGE =
       "Expected to correlate subscription for element with key '%d' and message name '%s', "
           + "but no such message subscription exists";
+
+  private static final String SUBSCRIPTION_ACKNOWLEDGE_ERROR_MESSAGE =
+      "Expected to acknowledge correlating message with key '%d' to subscription with key '%d'";
+  private static final String SUBSCRIPTION_ALREADY_CORRELATING_AGAIN_MESSAGE =
+      "but the subscription is already correlating to another message with key '%d'";
+  private static final String SUBSCRIPTION_ALREADY_CORRELATED_MESSAGE =
+      "but the subscription has already been correlated'";
 
   private final MessageSubscriptionState subscriptionState;
   private final MessageCorrelationState messageCorrelationState;
@@ -67,7 +76,24 @@ public final class MessageSubscriptionCorrelateProcessor
         subscriptionState.get(command.getElementInstanceKey(), command.getMessageNameBuffer());
 
     if (subscription == null) {
-      rejectCommand(record);
+      final var reason = formatNoSubscriptionFoundReason(record);
+      rejectionWriter.appendRejection(record, RejectionType.NOT_FOUND, reason);
+      return;
+
+    } else if (subscription.getRecord().getMessageKey() != record.getValue().getMessageKey()) {
+      // This concerns the acknowledgement of a retried correlate process message subscription
+      // command. The message subscription was already marked as correlated for this message, and
+      // another message has started correlating. There's no need to update the state.
+      final var reason = formatSubscriptionAlreadyCorrelatingAgainReason(record, subscription);
+      rejectionWriter.appendRejection(record, RejectionType.INVALID_STATE, reason);
+      return;
+
+    } else if (!subscription.isCorrelating()) {
+      // This concerns the acknowledgement of a retried correlate process message subscription
+      // command. The message subscription was already marked as correlated. No need to update the
+      // state.
+      final var reason = formatSubscriptionAlreadyCorrelatedReason(record, subscription);
+      rejectionWriter.appendRejection(record, RejectionType.INVALID_STATE, reason);
       return;
     }
 
@@ -79,6 +105,33 @@ public final class MessageSubscriptionCorrelateProcessor
     if (!messageSubscription.isInterrupting()) {
       messageCorrelator.correlateNextMessage(subscription.getKey(), messageSubscription);
     }
+  }
+
+  private static String formatNoSubscriptionFoundReason(
+      final TypedRecord<MessageSubscriptionRecord> record) {
+    return String.format(
+        NO_SUBSCRIPTION_FOUND_MESSAGE,
+        record.getValue().getElementInstanceKey(),
+        BufferUtil.bufferAsString(record.getValue().getMessageNameBuffer()));
+  }
+
+  private static String formatSubscriptionAlreadyCorrelatingAgainReason(
+      final TypedRecord<MessageSubscriptionRecord> record, final MessageSubscription subscription) {
+    return "%s %s"
+        .formatted(
+            SUBSCRIPTION_ACKNOWLEDGE_ERROR_MESSAGE.formatted(
+                record.getValue().getMessageKey(), subscription.getKey()),
+            SUBSCRIPTION_ALREADY_CORRELATING_AGAIN_MESSAGE.formatted(
+                subscription.getRecord().getMessageKey()));
+  }
+
+  private static String formatSubscriptionAlreadyCorrelatedReason(
+      final TypedRecord<MessageSubscriptionRecord> record, final MessageSubscription subscription) {
+    return "%s %s"
+        .formatted(
+            SUBSCRIPTION_ACKNOWLEDGE_ERROR_MESSAGE.formatted(
+                record.getValue().getMessageKey(), subscription.getKey()),
+            SUBSCRIPTION_ALREADY_CORRELATED_MESSAGE);
   }
 
   private void writeCorrelationResponse(
@@ -106,16 +159,5 @@ public final class MessageSubscriptionCorrelateProcessor
           requestData.getRequestId(),
           requestData.getRequestStreamId());
     }
-  }
-
-  private void rejectCommand(final TypedRecord<MessageSubscriptionRecord> record) {
-    final var subscription = record.getValue();
-    final var reason =
-        String.format(
-            NO_SUBSCRIPTION_FOUND_MESSAGE,
-            subscription.getElementInstanceKey(),
-            BufferUtil.bufferAsString(subscription.getMessageNameBuffer()));
-
-    rejectionWriter.appendRejection(record, RejectionType.NOT_FOUND, reason);
   }
 }

@@ -8,8 +8,8 @@
 package io.camunda.optimize.service.db.os.report.service;
 
 import static io.camunda.optimize.service.db.DatabaseConstants.OPTIMIZE_DATE_FORMAT;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.gteLte;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.gteLte;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
 import static io.camunda.optimize.service.db.os.report.interpreter.groupby.AbstractGroupByVariableInterpreterOS.FILTERED_FLOW_NODE_AGGREGATION;
 import static java.util.stream.Collectors.toMap;
 
@@ -22,7 +22,6 @@ import io.camunda.optimize.service.util.configuration.condition.OpenSearchCondit
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
@@ -39,10 +38,10 @@ import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
 @Conditional(OpenSearchCondition.class)
 public class VariableAggregationServiceOS {
+
   public static final String NESTED_VARIABLE_AGGREGATION = "nestedVariables";
   public static final String NESTED_FLOWNODE_AGGREGATION = "nestedFlowNodes";
   public static final String VARIABLES_AGGREGATION = "variables";
@@ -56,6 +55,17 @@ public class VariableAggregationServiceOS {
   private final NumberVariableAggregationServiceOS numberVariableAggregationService;
   private final DateAggregationServiceOS dateAggregationService;
   private final MinMaxStatsServiceOS minMaxStatsService;
+
+  public VariableAggregationServiceOS(
+      final ConfigurationService configurationService,
+      final NumberVariableAggregationServiceOS numberVariableAggregationService,
+      final DateAggregationServiceOS dateAggregationService,
+      final MinMaxStatsServiceOS minMaxStatsService) {
+    this.configurationService = configurationService;
+    this.numberVariableAggregationService = numberVariableAggregationService;
+    this.dateAggregationService = dateAggregationService;
+    this.minMaxStatsService = minMaxStatsService;
+  }
 
   public Optional<Pair<String, Aggregation>> createVariableSubAggregation(
       final VariableAggregationContextOS context) {
@@ -172,7 +182,7 @@ public class VariableAggregationServiceOS {
   }
 
   public Map<String, Aggregate> retrieveSubAggregationFromBucketMapEntry(
-      Map.Entry<String, Map<String, Aggregate>> bucketMapEntry) {
+      final Map.Entry<String, Map<String, Aggregate>> bucketMapEntry) {
     final ReverseNestedAggregate reverseNested =
         bucketMapEntry.getValue().get(VARIABLES_INSTANCE_COUNT_AGGREGATION).reverseNested();
     if (reverseNested == null) {

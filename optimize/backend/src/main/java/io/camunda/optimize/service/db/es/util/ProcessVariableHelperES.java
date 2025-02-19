@@ -15,17 +15,16 @@ import static io.camunda.optimize.service.db.util.ProcessVariableHelper.getNeste
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.ChildScoreMode;
 import io.camunda.optimize.dto.optimize.query.variable.VariableType;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class ProcessVariableHelperES {
+public final class ProcessVariableHelperES {
+
+  private ProcessVariableHelperES() {}
 
   public static BoolQuery.Builder createFilterForUndefinedOrNullQueryBuilder(
       final String variableName, final VariableType variableType) {
     final String variableTypeId = variableType.getId();
 
-    BoolQuery.Builder builder = new BoolQuery.Builder();
+    final BoolQuery.Builder builder = new BoolQuery.Builder();
     builder
         .should(
             s ->
@@ -100,7 +99,7 @@ public class ProcessVariableHelperES {
   public static BoolQuery.Builder createExcludeUndefinedOrNullQueryFilterBuilder(
       final String variableName, final VariableType variableType) {
     final String variableTypeId = variableType.getId();
-    BoolQuery.Builder builder = new BoolQuery.Builder();
+    final BoolQuery.Builder builder = new BoolQuery.Builder();
     builder.must(
         m ->
             m.nested(

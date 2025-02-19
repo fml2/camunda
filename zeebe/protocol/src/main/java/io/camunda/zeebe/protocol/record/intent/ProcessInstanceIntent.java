@@ -36,7 +36,18 @@ public enum ProcessInstanceIntent implements ProcessInstanceRelatedIntent {
 
   ELEMENT_MIGRATED((short) 11),
 
-  COMPLETE_EXECUTION_LISTENER((short) 12);
+  /**
+   * Represents the intent that signals about the completion of execution listener job, allowing
+   * either the creation of the next execution listener job or the finalization of the process
+   * element activation (for `start` listeners) or completion (for `end` listeners) phases.
+   *
+   * <p>Until this intent is written, the execution of the process element is paused, ensuring that
+   * all operations defined by the listener are fully executed before proceeding with the element's
+   * activation or completion.
+   */
+  COMPLETE_EXECUTION_LISTENER((short) 12),
+  /** Represents the intent signaling the migration of an ancestor element instance. */
+  ANCESTOR_MIGRATED((short) 13);
 
   private static final Set<ProcessInstanceIntent> PROCESS_INSTANCE_COMMANDS = EnumSet.of(CANCEL);
   private static final Set<ProcessInstanceIntent> BPMN_ELEMENT_COMMANDS =
@@ -87,6 +98,8 @@ public enum ProcessInstanceIntent implements ProcessInstanceRelatedIntent {
         return ELEMENT_MIGRATED;
       case 12:
         return COMPLETE_EXECUTION_LISTENER;
+      case 13:
+        return ANCESTOR_MIGRATED;
       default:
         return Intent.UNKNOWN;
     }
@@ -108,6 +121,7 @@ public enum ProcessInstanceIntent implements ProcessInstanceRelatedIntent {
       case ELEMENT_TERMINATING:
       case ELEMENT_TERMINATED:
       case ELEMENT_MIGRATED:
+      case ANCESTOR_MIGRATED:
         return true;
       default:
         return false;

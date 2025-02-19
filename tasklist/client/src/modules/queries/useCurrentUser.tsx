@@ -8,28 +8,17 @@
 
 import {useQuery} from '@tanstack/react-query';
 import {api} from 'modules/api';
-import {RequestError, request} from 'modules/request';
-import {CurrentUser} from 'modules/types';
+import {type RequestError, request} from 'modules/request';
+import type {CurrentUser} from 'modules/types';
 
 function useCurrentUser() {
   return useQuery<CurrentUser, RequestError | Error>({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      const {response, error} = await request(api.getCurrentUser());
+      const {response, error} = await request(api.v2.getCurrentUser());
 
       if (response !== null) {
-        const currentUser = await response.json();
-        const permissions: unknown[] = currentUser?.permissions ?? [];
-
-        return {
-          ...currentUser,
-          permissions: permissions
-            .filter<string>(
-              (permission): permission is string =>
-                typeof permission === 'string',
-            )
-            .map((permission) => permission.toLowerCase()),
-        };
+        return response.json();
       }
 
       throw error ?? new Error('Could not fetch current user');

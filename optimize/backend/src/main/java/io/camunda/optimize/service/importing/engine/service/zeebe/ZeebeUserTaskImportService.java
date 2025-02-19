@@ -38,14 +38,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 
-@Slf4j
 public class ZeebeUserTaskImportService
     extends ZeebeProcessInstanceSubEntityImportService<ZeebeUserTaskRecordDto> {
 
   public static final Set<UserTaskIntent> INTENTS_TO_IMPORT =
       Set.of(CREATING, ASSIGNED, COMPLETED, CANCELED);
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(ZeebeUserTaskImportService.class);
 
   public ZeebeUserTaskImportService(
       final ConfigurationService configurationService,
@@ -75,7 +76,7 @@ public class ZeebeUserTaskImportService
             .stream()
             .map(this::createProcessInstanceForData)
             .toList();
-    log.debug(
+    LOG.debug(
         "Processing {} fetched zeebe userTask records, of which {} are relevant to Optimize and will be imported.",
         userTaskRecords.size(),
         optimizeDtos.size());

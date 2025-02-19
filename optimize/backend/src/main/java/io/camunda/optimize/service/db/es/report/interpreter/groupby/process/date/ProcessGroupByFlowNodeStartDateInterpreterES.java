@@ -19,21 +19,32 @@ import io.camunda.optimize.service.db.es.report.service.MinMaxStatsServiceES;
 import io.camunda.optimize.service.db.report.plan.process.ProcessGroupBy;
 import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCondition;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class ProcessGroupByFlowNodeStartDateInterpreterES
     extends AbstractProcessGroupByFlowNodeDateInterpreterES {
-  @Getter private final DateAggregationServiceES dateAggregationService;
-  @Getter private final MinMaxStatsServiceES minMaxStatsService;
-  @Getter private final DefinitionService definitionService;
-  @Getter private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
-  @Getter private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  private final DateAggregationServiceES dateAggregationService;
+  private final MinMaxStatsServiceES minMaxStatsService;
+  private final DefinitionService definitionService;
+  private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
+  private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  public ProcessGroupByFlowNodeStartDateInterpreterES(
+      final DateAggregationServiceES dateAggregationService,
+      final MinMaxStatsServiceES minMaxStatsService,
+      final DefinitionService definitionService,
+      final ProcessDistributedByInterpreterFacadeES distributedByInterpreter,
+      final ProcessViewInterpreterFacadeES viewInterpreter) {
+    this.dateAggregationService = dateAggregationService;
+    this.minMaxStatsService = minMaxStatsService;
+    this.definitionService = definitionService;
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Set<ProcessGroupBy> getSupportedGroupBys() {
@@ -41,7 +52,32 @@ public class ProcessGroupByFlowNodeStartDateInterpreterES
   }
 
   @Override
+  public DateAggregationServiceES getDateAggregationService() {
+    return dateAggregationService;
+  }
+
+  @Override
+  public MinMaxStatsServiceES getMinMaxStatsService() {
+    return minMaxStatsService;
+  }
+
+  @Override
   protected String getDateField() {
     return FLOW_NODE_INSTANCES + "." + FlowNodeInstanceDto.Fields.startDate;
+  }
+
+  @Override
+  public DefinitionService getDefinitionService() {
+    return definitionService;
+  }
+
+  @Override
+  public ProcessDistributedByInterpreterFacadeES getDistributedByInterpreter() {
+    return distributedByInterpreter;
+  }
+
+  @Override
+  public ProcessViewInterpreterFacadeES getViewInterpreter() {
+    return viewInterpreter;
   }
 }

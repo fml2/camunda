@@ -25,8 +25,8 @@ public record IncidentSort(List<FieldSorting> orderings) implements SortOption {
   public static final class Builder extends SortOption.AbstractBuilder<IncidentSort.Builder>
       implements ObjectBuilder<IncidentSort> {
 
-    public Builder key() {
-      currentOrdering = new FieldSorting("key", null);
+    public Builder incidentKey() {
+      currentOrdering = new FieldSorting("incidentKey", null);
       return this;
     }
 
@@ -35,8 +35,8 @@ public record IncidentSort(List<FieldSorting> orderings) implements SortOption {
       return this;
     }
 
-    public Builder bpmnProcessId() {
-      currentOrdering = new FieldSorting("bpmnProcessId", null);
+    public Builder processDefinitionId() {
+      currentOrdering = new FieldSorting("processDefinitionId", null);
       return this;
     }
 
@@ -77,11 +77,6 @@ public record IncidentSort(List<FieldSorting> orderings) implements SortOption {
 
     public Builder jobKey() {
       currentOrdering = new FieldSorting("jobKey", null);
-      return this;
-    }
-
-    public Builder treePath() {
-      currentOrdering = new FieldSorting("treePath", null);
       return this;
     }
 

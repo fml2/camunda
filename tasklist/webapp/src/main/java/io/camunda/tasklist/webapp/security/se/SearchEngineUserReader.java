@@ -12,7 +12,7 @@ import static io.camunda.tasklist.webapp.security.TasklistProfileService.SSO_AUT
 
 import io.camunda.authentication.entity.CamundaUser;
 import io.camunda.tasklist.util.CollectionUtil;
-import io.camunda.tasklist.webapp.graphql.entity.UserDTO;
+import io.camunda.tasklist.webapp.dto.UserDTO;
 import io.camunda.tasklist.webapp.security.UserReader;
 import io.camunda.tasklist.webapp.security.se.store.UserStore;
 import java.util.List;
@@ -20,6 +20,7 @@ import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -32,6 +33,9 @@ public class SearchEngineUserReader implements UserReader {
 
   @Override
   public Optional<UserDTO> getCurrentUserBy(final Authentication authentication) {
+    if (authentication == null) {
+      return Optional.empty();
+    }
     final Object principal = authentication.getPrincipal();
     if (principal instanceof CamundaUser) {
       final CamundaUser user = (CamundaUser) principal;
@@ -41,8 +45,10 @@ public class SearchEngineUserReader implements UserReader {
               .setDisplayName(user.getDisplayName())
               .setPermissions(
                   rolePermissionService.getPermissions(
-                      user.getRoles().stream().map(Role::fromString).toList()))
-              .setApiUser(false));
+                      user.getAuthorities().stream()
+                          .map(GrantedAuthority::getAuthority)
+                          .map(Role::fromString)
+                          .toList())));
     }
     return Optional.empty();
   }
@@ -59,8 +65,7 @@ public class SearchEngineUserReader implements UserReader {
         userEntity ->
             new UserDTO()
                 .setUserId(userEntity.getUserId())
-                .setDisplayName(userEntity.getDisplayName())
-                .setApiUser(false));
+                .setDisplayName(userEntity.getDisplayName()));
   }
 
   @Override

@@ -7,9 +7,9 @@
  */
 package io.camunda.service;
 
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
 import io.camunda.service.exception.CamundaBrokerException;
-import io.camunda.util.ObjectBuilder;
+import io.camunda.service.security.SecurityContextProvider;
 import io.camunda.zeebe.broker.client.api.BrokerClient;
 import io.camunda.zeebe.broker.client.api.dto.BrokerRequest;
 import io.camunda.zeebe.broker.client.api.dto.BrokerResponse;
@@ -24,17 +24,21 @@ import org.agrona.concurrent.UnsafeBuffer;
 public abstract class ApiServices<T extends ApiServices<T>> {
 
   protected final BrokerClient brokerClient;
+  protected final SecurityContextProvider securityContextProvider;
   protected final Authentication authentication;
 
-  protected ApiServices(final BrokerClient brokerClient, final Authentication authentication) {
+  protected ApiServices(
+      final BrokerClient brokerClient,
+      final SecurityContextProvider securityContextProvider,
+      final Authentication authentication) {
     this.brokerClient = brokerClient;
+    this.securityContextProvider = securityContextProvider;
     this.authentication = authentication;
   }
 
   public abstract T withAuthentication(final Authentication authentication);
 
-  public T withAuthentication(
-      final Function<Authentication.Builder, ObjectBuilder<Authentication>> fn) {
+  public T withAuthentication(final Function<Authentication.Builder, Authentication.Builder> fn) {
     return withAuthentication(fn.apply(new Authentication.Builder()).build());
   }
 
@@ -44,7 +48,7 @@ public abstract class ApiServices<T extends ApiServices<T>> {
 
   protected <R> CompletableFuture<BrokerResponse<R>> sendBrokerRequestWithFullResponse(
       final BrokerRequest<R> brokerRequest) {
-    brokerRequest.setAuthorization(authentication.token());
+    brokerRequest.setAuthorization(authentication.claims());
     return brokerClient
         .sendRequest(brokerRequest)
         .handleAsync(

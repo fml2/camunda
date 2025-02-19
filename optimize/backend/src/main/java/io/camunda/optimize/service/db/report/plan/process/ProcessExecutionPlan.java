@@ -54,11 +54,7 @@ import static io.camunda.optimize.service.db.report.plan.process.ProcessView.PRO
 import io.camunda.optimize.dto.optimize.query.report.single.process.ProcessReportDataDto;
 import io.camunda.optimize.service.db.report.plan.ExecutionPlan;
 import io.camunda.optimize.service.db.report.plan.ReportResultType;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 
-@Getter
-@RequiredArgsConstructor
 public enum ProcessExecutionPlan implements ExecutionPlan {
   FLOW_NODE_DURATION_GROUP_BY_FLOW_NODE_END_DATE_BY_FLOW_NODE(
       PROCESS_VIEW_FLOW_NODE_DURATION,
@@ -621,19 +617,19 @@ public enum ProcessExecutionPlan implements ExecutionPlan {
   private final String commandKey;
 
   ProcessExecutionPlan(
-      ProcessView view,
-      ProcessGroupBy groupBy,
-      ProcessDistributedBy distributedBy,
-      ReportResultType resultType) {
+      final ProcessView view,
+      final ProcessGroupBy groupBy,
+      final ProcessDistributedBy distributedBy,
+      final ReportResultType resultType) {
     this(view, groupBy, distributedBy, resultType, false);
   }
 
   ProcessExecutionPlan(
-      ProcessView view,
-      ProcessGroupBy groupBy,
-      ProcessDistributedBy distributedBy,
-      ReportResultType resultType,
-      boolean assigneeReport) {
+      final ProcessView view,
+      final ProcessGroupBy groupBy,
+      final ProcessDistributedBy distributedBy,
+      final ReportResultType resultType,
+      final boolean assigneeReport) {
     this.view = view;
     this.groupBy = groupBy;
     this.distributedBy = distributedBy;
@@ -642,13 +638,28 @@ public enum ProcessExecutionPlan implements ExecutionPlan {
     commandKey = buildCommandKey();
   }
 
+  private ProcessExecutionPlan(
+      final ProcessView view,
+      final ProcessGroupBy groupBy,
+      final ProcessDistributedBy distributedBy,
+      final ReportResultType resultType,
+      final boolean assigneeReport,
+      final String commandKey) {
+    this.view = view;
+    this.groupBy = groupBy;
+    this.distributedBy = distributedBy;
+    this.resultType = resultType;
+    this.assigneeReport = assigneeReport;
+    this.commandKey = commandKey;
+  }
+
   @Override
   public boolean isRawDataReport() {
     return resultType == RAW_DATA;
   }
 
   private String buildCommandKey() {
-    ProcessReportDataDto processReportDataDto =
+    final ProcessReportDataDto processReportDataDto =
         ProcessReportDataDto.builder()
             .groupBy(groupBy.getDto())
             .distributedBy(distributedBy.getDto())
@@ -658,5 +669,29 @@ public enum ProcessExecutionPlan implements ExecutionPlan {
     processReportDataDto.getConfiguration().setProcessPart(view.getProcessPartDto());
 
     return processReportDataDto.createCommandKeys().get(0);
+  }
+
+  public ProcessView getView() {
+    return this.view;
+  }
+
+  public ProcessGroupBy getGroupBy() {
+    return this.groupBy;
+  }
+
+  public ProcessDistributedBy getDistributedBy() {
+    return this.distributedBy;
+  }
+
+  public ReportResultType getResultType() {
+    return this.resultType;
+  }
+
+  public boolean isAssigneeReport() {
+    return this.assigneeReport;
+  }
+
+  public String getCommandKey() {
+    return this.commandKey;
   }
 }

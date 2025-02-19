@@ -33,23 +33,28 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import lombok.AllArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@AllArgsConstructor
 @Component
-@Slf4j
 @Conditional(ElasticSearchCondition.class)
 public class ProcessDefinitionReaderES implements ProcessDefinitionReader {
 
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(ProcessDefinitionReaderES.class);
   private final DefinitionReaderES definitionReader;
   private final OptimizeElasticsearchClient esClient;
 
+  public ProcessDefinitionReaderES(
+      final DefinitionReaderES definitionReader, final OptimizeElasticsearchClient esClient) {
+    this.definitionReader = definitionReader;
+    this.esClient = esClient;
+  }
+
   @Override
   public Optional<ProcessDefinitionOptimizeDto> getProcessDefinition(final String definitionId) {
-    BoolQuery.Builder query = new BoolQuery.Builder();
+    final BoolQuery.Builder query = new BoolQuery.Builder();
     query.must(m -> m.matchAll(l -> l));
     query.must(
         t ->
@@ -67,7 +72,7 @@ public class ProcessDefinitionReaderES implements ProcessDefinitionReader {
   public Set<String> getAllNonOnboardedProcessDefinitionKeys() {
     final String defKeyAgg = "keyAgg";
 
-    SearchRequest searchRequest =
+    final SearchRequest searchRequest =
         OptimizeSearchRequestBuilderES.of(
             s ->
                 s.optimizeIndex(esClient, PROCESS_DEFINITION_INDEX_NAME)
@@ -101,12 +106,12 @@ public class ProcessDefinitionReaderES implements ProcessDefinitionReader {
                     .source(o -> o.fetch(false))
                     .size(MAX_RESPONSE_SIZE_LIMIT));
 
-    SearchResponse<?> searchResponse;
+    final SearchResponse<?> searchResponse;
     try {
       searchResponse = esClient.search(searchRequest, Object.class);
-    } catch (IOException e) {
-      String reason = "Was not able to fetch non-onboarded process definition keys.";
-      log.error(reason, e);
+    } catch (final IOException e) {
+      final String reason = "Was not able to fetch non-onboarded process definition keys.";
+      LOG.error(reason, e);
       throw new OptimizeRuntimeException(reason, e);
     }
     final StringTermsAggregate definitionKeyTerms =

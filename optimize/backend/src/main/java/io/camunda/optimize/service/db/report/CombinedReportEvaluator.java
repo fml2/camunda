@@ -19,19 +19,30 @@ import io.camunda.optimize.service.exceptions.OptimizeValidationException;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.slf4j.Logger;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class CombinedReportEvaluator {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(CombinedReportEvaluator.class);
   private final ExecutionPlanExtractor executionPlanExtractor;
   private final ExecutionPlanInterpreterFacade interpreter;
   private final SingleReportEvaluator singleReportEvaluator;
   private final CombinedReportInstanceCounter<?> combinedReportInstanceCounter;
+
+  public CombinedReportEvaluator(
+      final ExecutionPlanExtractor executionPlanExtractor,
+      final ExecutionPlanInterpreterFacade interpreter,
+      final SingleReportEvaluator singleReportEvaluator,
+      final CombinedReportInstanceCounter<?> combinedReportInstanceCounter) {
+    this.executionPlanExtractor = executionPlanExtractor;
+    this.interpreter = interpreter;
+    this.singleReportEvaluator = singleReportEvaluator;
+    this.combinedReportInstanceCounter = combinedReportInstanceCounter;
+  }
 
   @SuppressWarnings(UNCHECKED_CAST)
   public <T> List<SingleReportEvaluationResult<T>> evaluate(
@@ -41,8 +52,8 @@ public class CombinedReportEvaluator {
     try {
       combinedRangeMinMaxStats =
           getGlobalMinMaxStats(singleReportDefinitions, timezone).orElse(null);
-    } catch (OptimizeValidationException e) {
-      log.error("Failed to evaluate combined report! Reason: ", e);
+    } catch (final OptimizeValidationException e) {
+      LOG.error("Failed to evaluate combined report! Reason: ", e);
       return List.of();
     }
 
@@ -61,8 +72,8 @@ public class CombinedReportEvaluator {
     }
     try {
       return combinedReportInstanceCounter.count(singleReportDefinitions);
-    } catch (OptimizeValidationException e) {
-      log.error("Failed to evaluate combined report instance count! Reason: ", e);
+    } catch (final OptimizeValidationException e) {
+      LOG.error("Failed to evaluate combined report instance count! Reason: ", e);
       return 0L;
     }
   }
@@ -81,10 +92,10 @@ public class CombinedReportEvaluator {
               reportEvaluationContext = new ReportEvaluationContext<>();
           reportEvaluationContext.setReportDefinition(reportDefinition);
           reportEvaluationContext.setTimezone(timezone);
-          ExecutionContext executionContext =
+          final ExecutionContext executionContext =
               ExecutionContextFactory.buildExecutionContext(plan, reportEvaluationContext);
 
-          Optional<MinMaxStatDto> minMaxStatDto =
+          final Optional<MinMaxStatDto> minMaxStatDto =
               interpreter.getGroupByMinMaxStats(executionContext);
           minMaxStatDto.ifPresent(combinedIntervalCalculator::addStat);
         });
@@ -97,17 +108,17 @@ public class CombinedReportEvaluator {
       final ZoneId timezone) {
     Optional<SingleReportEvaluationResult<?>> result = Optional.empty();
     try {
-      ReportEvaluationContext<SingleProcessReportDefinitionRequestDto> reportEvaluationContext =
-          new ReportEvaluationContext<>();
+      final ReportEvaluationContext<SingleProcessReportDefinitionRequestDto>
+          reportEvaluationContext = new ReportEvaluationContext<>();
       reportEvaluationContext.setReportDefinition(reportDefinition);
       reportEvaluationContext.setTimezone(timezone);
       reportEvaluationContext.setCombinedRangeMinMaxStats(combinedRangeMinMaxStats);
-      SingleReportEvaluationResult<?> singleResult =
+      final SingleReportEvaluationResult<?> singleResult =
           singleReportEvaluator.evaluate(reportEvaluationContext);
       result = Optional.of(singleResult);
-    } catch (OptimizeException | OptimizeValidationException onlyForLogging) {
+    } catch (final OptimizeException | OptimizeValidationException onlyForLogging) {
       // we just ignore reports that cannot be evaluated in a combined report
-      log.debug(
+      LOG.debug(
           "Single report with id [{}] could not be evaluated for a combined report.",
           reportDefinition.getId(),
           onlyForLogging);

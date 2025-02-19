@@ -42,6 +42,18 @@
           }
         }
       },
+      "isPublic": {
+        "type": "boolean"
+      },
+      "formId": {
+        "type": "keyword"
+      },
+      "formKey": {
+        "type": "keyword"
+      },
+      "isFormEmbedded": {
+        "type": "boolean"
+      },
       "tenantId": {
         "type": "keyword"
       }

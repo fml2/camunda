@@ -17,29 +17,55 @@ import io.camunda.optimize.dto.optimize.FlowNodeDataDto;
 import io.camunda.optimize.dto.optimize.ProcessDefinitionOptimizeDto;
 import io.camunda.optimize.service.DefinitionService;
 import io.camunda.optimize.service.db.es.report.interpreter.view.process.ProcessViewInterpreterFacadeES;
+import io.camunda.optimize.service.db.report.interpreter.distributedby.process.model.ProcessDistributedByModelElementInterpreterHelper;
 import io.camunda.optimize.service.db.report.plan.process.ProcessDistributedBy;
 import io.camunda.optimize.service.util.configuration.ConfigurationService;
 import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCondition;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class ProcessDistributedByUserTaskInterpreterES
     extends AbstractProcessDistributedByModelElementInterpreterES {
-  @Getter private final ConfigurationService configurationService;
-  @Getter private final DefinitionService definitionService;
-  @Getter private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  private final ConfigurationService configurationService;
+  private final DefinitionService definitionService;
+  private final ProcessViewInterpreterFacadeES viewInterpreter;
+  private final ProcessDistributedByModelElementInterpreterHelper helper;
+
+  public ProcessDistributedByUserTaskInterpreterES(
+      final ConfigurationService configurationService,
+      final DefinitionService definitionService,
+      final ProcessViewInterpreterFacadeES viewInterpreter,
+      final ProcessDistributedByModelElementInterpreterHelper helper) {
+    this.configurationService = configurationService;
+    this.definitionService = definitionService;
+    this.viewInterpreter = viewInterpreter;
+    this.helper = helper;
+  }
 
   @Override
   public Set<ProcessDistributedBy> getSupportedDistributedBys() {
     return Set.of(PROCESS_DISTRIBUTED_BY_USER_TASK);
+  }
+
+  @Override
+  public ConfigurationService getConfigurationService() {
+    return configurationService;
+  }
+
+  @Override
+  public DefinitionService getDefinitionService() {
+    return definitionService;
+  }
+
+  @Override
+  protected ProcessDistributedByModelElementInterpreterHelper getHelper() {
+    return helper;
   }
 
   @Override
@@ -49,8 +75,13 @@ public class ProcessDistributedByUserTaskInterpreterES
 
   @Override
   protected Map<String, FlowNodeDataDto> extractModelElementData(
-      DefinitionOptimizeResponseDto def) {
+      final DefinitionOptimizeResponseDto def) {
     return ((ProcessDefinitionOptimizeDto) def)
         .getUserTaskData().stream().collect(toMap(FlowNodeDataDto::getId, Function.identity()));
+  }
+
+  @Override
+  public ProcessViewInterpreterFacadeES getViewInterpreter() {
+    return viewInterpreter;
   }
 }

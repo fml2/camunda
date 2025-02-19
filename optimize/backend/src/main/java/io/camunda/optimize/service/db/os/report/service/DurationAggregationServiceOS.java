@@ -7,13 +7,18 @@
  */
 package io.camunda.optimize.service.db.os.report.service;
 
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.filter;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.filter;
+import static io.camunda.optimize.service.db.os.report.filter.util.ModelElementFilterQueryUtilOS.createUserTaskFlowNodeTypeFilter;
 import static io.camunda.optimize.service.db.os.report.interpreter.util.FilterLimitedAggregationUtilOS.wrapWithFilterLimitedParentAggregation;
 import static io.camunda.optimize.service.db.os.report.interpreter.util.NumberHistogramAggregationUtilOS.generateHistogramFromScript;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.DURATION;
+import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_INSTANCES;
+import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_START_DATE;
+import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_TOTAL_DURATION;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.START_DATE;
 
 import io.camunda.optimize.dto.optimize.query.report.single.configuration.SingleReportConfigurationDto;
+import io.camunda.optimize.dto.optimize.query.report.single.configuration.UserTaskDurationTime;
 import io.camunda.optimize.dto.optimize.query.report.single.configuration.custom_buckets.CustomBucketDto;
 import io.camunda.optimize.dto.optimize.query.report.single.filter.data.operator.ComparisonOperator;
 import io.camunda.optimize.dto.optimize.query.report.single.process.ProcessReportDataDto;
@@ -34,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
-import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.opensearch.client.opensearch._types.Script;
 import org.opensearch.client.opensearch._types.aggregations.Aggregate;
@@ -45,11 +49,18 @@ import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@AllArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class DurationAggregationServiceOS extends DurationAggregationService {
+
   private final MinMaxStatsServiceOS minMaxStatsService;
   private final ProcessDistributedByInterpreterFacadeOS distributedByInterpreter;
+
+  public DurationAggregationServiceOS(
+      final MinMaxStatsServiceOS minMaxStatsService,
+      final ProcessDistributedByInterpreterFacadeOS distributedByInterpreter) {
+    this.minMaxStatsService = minMaxStatsService;
+    this.distributedByInterpreter = distributedByInterpreter;
+  }
 
   public Optional<Pair<String, Aggregation>> createLimitedGroupByScriptedDurationAggregation(
       final Query baseQuery,
@@ -64,6 +75,46 @@ public class DurationAggregationServiceOS extends DurationAggregationService {
         durationCalculationScript,
         minMaxStats,
         this::createProcessInstanceLimitingFilterQuery);
+  }
+
+  public Optional<Pair<String, Aggregation>>
+      createLimitedGroupByScriptedUserTaskDurationAggregation(
+          final Query boolQuery,
+          final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context,
+          final Script durationCalculationScript,
+          final UserTaskDurationTime userTaskDurationTime) {
+
+    final MinMaxStatDto minMaxStats =
+        minMaxStatsService.getMinMaxNumberRangeForNestedScriptedField(
+            context,
+            boolQuery,
+            getIndexNames(context),
+            FLOW_NODE_INSTANCES,
+            durationCalculationScript,
+            Query.of(q -> q.bool(createUserTaskFlowNodeTypeFilter().build())));
+    return createLimitedGroupByScriptedDurationAggregation(
+        context,
+        boolQuery,
+        durationCalculationScript,
+        minMaxStats,
+        (filterOperator, filterValueInMillis) ->
+            createUserTaskLimitingFilterQuery(
+                filterOperator, userTaskDurationTime, filterValueInMillis));
+  }
+
+  public Optional<Pair<String, Aggregation>> createLimitedGroupByScriptedEventDurationAggregation(
+      final Query query,
+      final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context,
+      final Script durationCalculationScript) {
+    final MinMaxStatDto minMaxStats =
+        minMaxStatsService.getMinMaxNumberRangeForNestedScriptedField(
+            context, query, getIndexNames(context), FLOW_NODE_INSTANCES, durationCalculationScript);
+    return createLimitedGroupByScriptedDurationAggregation(
+        context,
+        query,
+        durationCalculationScript,
+        minMaxStats,
+        this::createEventLimitingFilterQuery);
   }
 
   public List<CompositeCommandResult.GroupByResult> mapGroupByDurationResults(
@@ -86,6 +137,20 @@ public class DurationAggregationServiceOS extends DurationAggregationService {
                               String.valueOf(durationBucket.key()), distributions);
                         }))
         .toList();
+  }
+
+  private Query createUserTaskLimitingFilterQuery(
+      final ComparisonOperator filterOperator,
+      final UserTaskDurationTime userTaskDurationTime,
+      final double filterValueInMillis) {
+    return createLimitingFilterQuery(
+        filterOperator,
+        (long) filterValueInMillis,
+        FLOW_NODE_INSTANCES + "." + userTaskDurationTime.getDurationFieldName(),
+        FLOW_NODE_INSTANCES + "." + FLOW_NODE_START_DATE,
+        // user task duration calculations can be null (e.g. work time if the userTask hasn't been
+        // claimed)
+        true);
   }
 
   private Optional<Pair<String, Aggregation>> createLimitedGroupByScriptedDurationAggregation(
@@ -156,5 +221,15 @@ public class DurationAggregationServiceOS extends DurationAggregationService {
                             .includeNull(includeNull)
                             .build())))
         .build();
+  }
+
+  private Query createEventLimitingFilterQuery(
+      final ComparisonOperator filterOperator, final double filterValueInMillis) {
+    return createLimitingFilterQuery(
+        filterOperator,
+        (long) filterValueInMillis,
+        FLOW_NODE_INSTANCES + "." + FLOW_NODE_TOTAL_DURATION,
+        FLOW_NODE_INSTANCES + "." + FLOW_NODE_START_DATE,
+        false);
   }
 }

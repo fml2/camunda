@@ -9,15 +9,16 @@ package io.camunda.optimize.util;
 
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
+import io.camunda.zeebe.model.bpmn.builder.AdHocSubProcessBuilder;
 import io.camunda.zeebe.model.bpmn.builder.EndEventBuilder;
 import io.camunda.zeebe.model.bpmn.builder.ProcessBuilder;
 import java.time.Duration;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
+import java.util.function.Consumer;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class ZeebeBpmnModels {
 
+  public static final String ACTIVATE_ELEMENTS = "activateElements";
+  public static final String ADHOC_SUB_PROCESS = "adhocSubProcess";
   public static final String START_EVENT = "startEvent";
   public static final String SERVICE_TASK = "service_task";
   public static final String SEND_TASK = "send_task";
@@ -51,8 +52,11 @@ public class ZeebeBpmnModels {
   public static final String SIGNAL_PROCESS_SECOND_SIGNAL = "interruptingBoundarySignal";
   public static final String SIGNAL_PROCESS_THIRD_SIGNAL = "eventBasedGatewaySignal";
   public static final String SERVICE_TASK_WITH_COMPENSATION_EVENT = "compensationEvent";
+  public static final String TASK = "task";
   public static final String COMPENSATION_EVENT_TASK = "compensationEventTask";
   public static final String VERSION_TAG = "v1";
+
+  private ZeebeBpmnModels() {}
 
   public static BpmnModelInstance createStartEndProcess(final String processName) {
     return createStartEndProcess(processName, null);
@@ -83,6 +87,16 @@ public class ZeebeBpmnModels {
         .name(SERVICE_TASK)
         .endEvent(END_EVENT)
         .name(null)
+        .done();
+  }
+
+  public static BpmnModelInstance createAdHocSubProcess(
+      final String processName, final Consumer<AdHocSubProcessBuilder> modifier) {
+    return Bpmn.createExecutableProcess(processName)
+        .name(processName)
+        .startEvent(START_EVENT)
+        .adHocSubProcess(ADHOC_SUB_PROCESS, modifier)
+        .endEvent(END_EVENT)
         .done();
   }
 

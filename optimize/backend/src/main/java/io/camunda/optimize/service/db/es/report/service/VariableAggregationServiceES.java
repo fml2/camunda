@@ -29,11 +29,9 @@ import io.camunda.optimize.service.util.configuration.condition.ElasticSearchCon
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
 @Component
 @Conditional(ElasticSearchCondition.class)
 public class VariableAggregationServiceES {
@@ -52,13 +50,24 @@ public class VariableAggregationServiceES {
   private final DateAggregationServiceES dateAggregationService;
   private final MinMaxStatsServiceES minMaxStatsService;
 
+  public VariableAggregationServiceES(
+      final ConfigurationService configurationService,
+      final NumberVariableAggregationServiceES numberVariableAggregationService,
+      final DateAggregationServiceES dateAggregationService,
+      final MinMaxStatsServiceES minMaxStatsService) {
+    this.configurationService = configurationService;
+    this.numberVariableAggregationService = numberVariableAggregationService;
+    this.dateAggregationService = dateAggregationService;
+    this.minMaxStatsService = minMaxStatsService;
+  }
+
   public Optional<Map<String, Aggregation.Builder.ContainerBuilder>> createVariableSubAggregation(
       final VariableAggregationContextES context) {
     context.setVariableRangeMinMaxStats(getVariableMinMaxStats(context));
     switch (context.getVariableType()) {
       case STRING:
       case BOOLEAN:
-        Aggregation.Builder.ContainerBuilder builder =
+        final Aggregation.Builder.ContainerBuilder builder =
             new Aggregation.Builder()
                 .terms(
                     t ->
@@ -120,7 +129,7 @@ public class VariableAggregationServiceES {
       final Aggregate variableTermsAgg,
       final VariableType variableType,
       final ZoneId timezone) {
-    Map<String, Map<String, Aggregate>> bucketAggregations;
+    final Map<String, Map<String, Aggregate>> bucketAggregations;
     if (VariableType.DATE.equals(variableType)) {
       bucketAggregations =
           dateAggregationService.mapDateAggregationsToKeyAggregationMap(
@@ -147,7 +156,7 @@ public class VariableAggregationServiceES {
   }
 
   public Map<String, Aggregate> retrieveSubAggregationFromBucketMapEntry(
-      Map.Entry<String, Map<String, Aggregate>> bucketMapEntry) {
+      final Map.Entry<String, Map<String, Aggregate>> bucketMapEntry) {
     final ReverseNestedAggregate reverseNested =
         bucketMapEntry.getValue().get(VARIABLES_INSTANCE_COUNT_AGGREGATION).reverseNested();
     if (reverseNested == null) {
@@ -158,7 +167,7 @@ public class VariableAggregationServiceES {
       if (nestedFlowNodeAgg == null) {
         return reverseNested.aggregations(); // this is an instance report
       } else {
-        Map<String, Aggregate> flowNodeAggs =
+        final Map<String, Aggregate> flowNodeAggs =
             nestedFlowNodeAgg.nested().aggregations(); // this is a flownode report
         final FilterAggregate aggregation =
             flowNodeAggs.get(FILTERED_FLOW_NODE_AGGREGATION).filter();

@@ -10,18 +10,32 @@ import {expect} from '@playwright/test';
 import {test} from '../test-fixtures';
 import {Paths} from 'modules/Routes';
 import {
-  mockEvaluatedDrdData,
   mockEvaluatedDecisionInstance,
-  mockEvaluatedXml,
   mockEvaluatedDecisionInstanceWithoutPanels,
+  mockEvaluatedDrdData,
   mockEvaluatedDrdDataWithoutPanels,
+  mockEvaluatedLargeXml,
+  mockEvaluatedXml,
   mockEvaluatedXmlWithoutPanels,
   mockFailedDecisionInstance,
   mockFailedDrdData,
   mockFailedXml,
-  mockEvaluatedLargeXml,
   mockResponses,
 } from '../mocks/decisionInstance.mocks';
+import {URL_API_PATTERN} from '../constants';
+import {clientConfigMock} from '../mocks/clientConfig';
+
+test.beforeEach(async ({context}) => {
+  await context.route('**/client-config.js', (route) =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'text/javascript;charset=UTF-8',
+      },
+      body: clientConfigMock,
+    }),
+  );
+});
 
 test.describe('decision instance page', () => {
   for (const theme of ['light', 'dark']) {
@@ -29,7 +43,7 @@ test.describe('decision instance page', () => {
     test.skip(`error page - ${theme}`, async ({page, commonPage}) => {
       await commonPage.changeTheme(theme);
 
-      await page.route(/^.*\/api.*$/i, mockResponses({}));
+      await page.route(URL_API_PATTERN, mockResponses({}));
 
       await page.goto(Paths.decisionInstance('1'), {
         waitUntil: 'networkidle',
@@ -42,7 +56,7 @@ test.describe('decision instance page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           decisionInstanceDetail: mockEvaluatedDecisionInstance,
           drdData: mockEvaluatedDrdData,
@@ -64,7 +78,7 @@ test.describe('decision instance page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           decisionInstanceDetail: mockEvaluatedDecisionInstance,
           drdData: mockEvaluatedDrdData,
@@ -91,7 +105,7 @@ test.describe('decision instance page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           decisionInstanceDetail: mockEvaluatedDecisionInstanceWithoutPanels,
           drdData: mockEvaluatedDrdDataWithoutPanels,
@@ -117,7 +131,7 @@ test.describe('decision instance page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           decisionInstanceDetail: mockEvaluatedDecisionInstance,
           drdData: mockEvaluatedDrdData,
@@ -144,7 +158,7 @@ test.describe('decision instance page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           decisionInstanceDetail: mockFailedDecisionInstance,
           drdData: mockFailedDrdData,
@@ -166,7 +180,7 @@ test.describe('decision instance page', () => {
       await commonPage.changeTheme(theme);
 
       await page.route(
-        /^.*\/api.*$/i,
+        URL_API_PATTERN,
         mockResponses({
           decisionInstanceDetail: mockFailedDecisionInstance,
           drdData: mockFailedDrdData,

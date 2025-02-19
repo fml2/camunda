@@ -7,6 +7,7 @@
  */
 package io.camunda.webapps.schema.entities.operate;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -20,6 +21,11 @@ public class ProcessEntity extends OperateZeebeEntity<ProcessEntity> {
   private String bpmnXml;
   private String resourceName;
   private List<ProcessFlowNodeEntity> flowNodes = new ArrayList<>();
+  @JsonIgnore private List<String> callActivityIds = new ArrayList<>();
+  private String formId;
+  private String formKey;
+  private Boolean isFormEmbedded;
+  private Boolean isPublic;
   private String tenantId = DEFAULT_TENANT_ID;
 
   public String getName() {
@@ -49,7 +55,12 @@ public class ProcessEntity extends OperateZeebeEntity<ProcessEntity> {
         bpmnXml,
         resourceName,
         flowNodes,
-        tenantId);
+        callActivityIds,
+        tenantId,
+        formId,
+        formKey,
+        isFormEmbedded,
+        isPublic);
   }
 
   @Override
@@ -71,7 +82,12 @@ public class ProcessEntity extends OperateZeebeEntity<ProcessEntity> {
         && Objects.equals(bpmnXml, that.bpmnXml)
         && Objects.equals(resourceName, that.resourceName)
         && Objects.equals(flowNodes, that.flowNodes)
-        && Objects.equals(tenantId, that.tenantId);
+        && Objects.equals(callActivityIds, that.callActivityIds)
+        && Objects.equals(tenantId, that.tenantId)
+        && Objects.equals(formId, that.formId)
+        && Objects.equals(formKey, that.formKey)
+        && Objects.equals(isFormEmbedded, that.isFormEmbedded)
+        && Objects.equals(isPublic, that.isPublic);
   }
 
   @Override
@@ -96,6 +112,16 @@ public class ProcessEntity extends OperateZeebeEntity<ProcessEntity> {
         + '\''
         + ", flowNodes="
         + flowNodes
+        + ", callActivityIds="
+        + callActivityIds
+        + ", formId="
+        + formId
+        + ", formKey="
+        + formKey
+        + ", isFormEmbedded="
+        + isFormEmbedded
+        + ", isPublic="
+        + isPublic
         + ", tenantId='"
         + tenantId
         + '\''
@@ -160,12 +186,57 @@ public class ProcessEntity extends OperateZeebeEntity<ProcessEntity> {
     return this;
   }
 
+  public List<String> getCallActivityIds() {
+    return callActivityIds;
+  }
+
+  public ProcessEntity setCallActivityIds(final List<String> callActivityIds) {
+    this.callActivityIds = callActivityIds;
+    return this;
+  }
+
   public String getTenantId() {
     return tenantId;
   }
 
   public ProcessEntity setTenantId(final String tenantId) {
     this.tenantId = tenantId;
+    return this;
+  }
+
+  public String getFormId() {
+    return formId;
+  }
+
+  public ProcessEntity setFormId(final String formId) {
+    this.formId = formId;
+    return this;
+  }
+
+  public String getFormKey() {
+    return formKey;
+  }
+
+  public ProcessEntity setFormKey(final String formKey) {
+    this.formKey = formKey;
+    return this;
+  }
+
+  public Boolean getIsFormEmbedded() {
+    return isFormEmbedded;
+  }
+
+  public ProcessEntity setIsFormEmbedded(final Boolean isFormEmbedded) {
+    this.isFormEmbedded = isFormEmbedded;
+    return this;
+  }
+
+  public Boolean getIsPublic() {
+    return isPublic;
+  }
+
+  public ProcessEntity setIsPublic(final Boolean isPublic) {
+    this.isPublic = isPublic;
     return this;
   }
 }

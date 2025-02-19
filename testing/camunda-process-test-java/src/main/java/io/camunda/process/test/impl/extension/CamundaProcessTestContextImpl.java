@@ -15,6 +15,8 @@
  */
 package io.camunda.process.test.impl.extension;
 
+import io.camunda.client.CamundaClient;
+import io.camunda.client.CamundaClientBuilder;
 import io.camunda.process.test.api.CamundaProcessTestContext;
 import io.camunda.process.test.impl.client.CamundaManagementClient;
 import io.camunda.process.test.impl.containers.CamundaContainer;
@@ -30,13 +32,13 @@ public class CamundaProcessTestContextImpl implements CamundaProcessTestContext 
 
   private final CamundaContainer camundaContainer;
   private final ConnectorsContainer connectorsContainer;
-  private final Consumer<ZeebeClient> clientCreationCallback;
+  private final Consumer<AutoCloseable> clientCreationCallback;
   private final CamundaManagementClient camundaManagementClient;
 
   public CamundaProcessTestContextImpl(
       final CamundaContainer camundaContainer,
       final ConnectorsContainer connectorsContainer,
-      final Consumer<ZeebeClient> clientCreationCallback) {
+      final Consumer<AutoCloseable> clientCreationCallback) {
     this.camundaContainer = camundaContainer;
     this.connectorsContainer = connectorsContainer;
     this.clientCreationCallback = clientCreationCallback;
@@ -46,12 +48,33 @@ public class CamundaProcessTestContextImpl implements CamundaProcessTestContext 
   }
 
   @Override
-  public ZeebeClient createClient() {
+  public CamundaClient createClient() {
     return createClient(builder -> {});
   }
 
   @Override
-  public ZeebeClient createClient(final Consumer<ZeebeClientBuilder> modifier) {
+  public CamundaClient createClient(final Consumer<CamundaClientBuilder> modifier) {
+    final CamundaClientBuilder builder =
+        CamundaClient.newClientBuilder()
+            .usePlaintext()
+            .grpcAddress(getCamundaGrpcAddress())
+            .restAddress(getCamundaRestAddress());
+
+    modifier.accept(builder);
+
+    final CamundaClient client = builder.build();
+    clientCreationCallback.accept(client);
+
+    return client;
+  }
+
+  @Override
+  public ZeebeClient createZeebeClient() {
+    return createZeebeClient(builder -> {});
+  }
+
+  @Override
+  public ZeebeClient createZeebeClient(final Consumer<ZeebeClientBuilder> modifier) {
     final ZeebeClientBuilder builder =
         ZeebeClient.newClientBuilder()
             .usePlaintext()

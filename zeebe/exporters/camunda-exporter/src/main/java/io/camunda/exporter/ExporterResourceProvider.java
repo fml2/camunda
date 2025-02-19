@@ -7,26 +7,61 @@
  */
 package io.camunda.exporter;
 
-import io.camunda.exporter.config.ElasticsearchExporterConfiguration;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.exporter.cache.ExporterEntityCacheProvider;
+import io.camunda.exporter.config.ExporterConfiguration;
+import io.camunda.exporter.errorhandling.Error;
+import io.camunda.exporter.handlers.ExportHandler;
 import io.camunda.webapps.schema.descriptors.IndexDescriptor;
 import io.camunda.webapps.schema.descriptors.IndexTemplateDescriptor;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Collection;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 public interface ExporterResourceProvider {
 
-  void init(ElasticsearchExporterConfiguration configuration);
+  void init(
+      final ExporterConfiguration configuration,
+      final ExporterEntityCacheProvider entityCacheProvider,
+      final MeterRegistry meterRegistry,
+      final ExporterMetadata exporterMetadata,
+      final ObjectMapper objectMapper);
+
+  void close();
 
   /**
    * This should return descriptors describing the desired state of all indices provided.
    *
-   * @return A {@link Set} of {@link IndexDescriptor}
+   * @return A {@link Collection} of {@link IndexDescriptor}
    */
-  Set<IndexDescriptor> getIndexDescriptors();
+  Collection<IndexDescriptor> getIndexDescriptors();
 
   /**
    * This should return descriptors describing the desired state of all index templates provided.
    *
-   * @return A {@link Set} of {@link IndexTemplateDescriptor}
+   * @return A {@link Collection} of {@link IndexTemplateDescriptor}
    */
-  Set<IndexTemplateDescriptor> getIndexTemplateDescriptors();
+  Collection<IndexTemplateDescriptor> getIndexTemplateDescriptors();
+
+  /**
+   * @param descriptorClass the expected descriptor type
+   * @return the index template descriptor instance for the given class.
+   * @param <T> the expected descriptor type
+   */
+  <T extends IndexTemplateDescriptor> T getIndexTemplateDescriptor(Class<T> descriptorClass);
+
+  /**
+   * @return A {@link Set} of {@link ExportHandler} to be registered with the exporter
+   */
+  Set<ExportHandler<?, ?>> getExportHandlers();
+
+  /**
+   * Possible custom error handlers to be used if certain indices threw persistence errors. The
+   * first parameter is the name of the index that threw the error and the second is the error
+   * details
+   *
+   * @return A {@link BiConsumer} of {@link String} and {@link Error} to handle custom errors
+   */
+  BiConsumer<String, Error> getCustomErrorHandlers();
 }

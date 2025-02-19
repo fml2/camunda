@@ -14,21 +14,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.exporter.exceptions.IndexSchemaValidationException;
+import io.camunda.exporter.utils.TestObjectMapper;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 public class IndexSchemaValidatorTest {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final ObjectMapper MAPPER = TestObjectMapper.objectMapper();
 
   private static final IndexSchemaValidator VALIDATOR =
-      new IndexSchemaValidator(
-          Mockito.mock(ElasticsearchSchemaManager.class, Mockito.CALLS_REAL_METHODS));
+      new IndexSchemaValidator(TestObjectMapper.objectMapper());
 
   @Test
   void shouldDetectIndexWithAddedProperty() throws IOException {

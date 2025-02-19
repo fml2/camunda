@@ -19,11 +19,7 @@ import io.camunda.optimize.dto.optimize.query.report.single.ViewProperty;
 import io.camunda.optimize.dto.optimize.query.report.single.configuration.process_part.ProcessPartDto;
 import io.camunda.optimize.dto.optimize.query.report.single.process.view.ProcessViewDto;
 import io.camunda.optimize.dto.optimize.query.report.single.process.view.ProcessViewEntity;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 
-@Getter
-@RequiredArgsConstructor
 public enum ProcessView {
   PROCESS_VIEW_FLOW_NODE_DURATION(new ProcessViewDto(FLOW_NODE, DURATION)),
   PROCESS_VIEW_FLOW_NODE_FREQUENCY(new ProcessViewDto(FLOW_NODE, FREQUENCY)),
@@ -36,19 +32,32 @@ public enum ProcessView {
   PROCESS_VIEW_INSTANCE_PERCENTAGE(new ProcessViewDto(PROCESS_INSTANCE, PERCENTAGE)),
   PROCESS_VIEW_RAW_DATA(new ProcessViewDto(ViewProperty.RAW_DATA)),
   PROCESS_VIEW_VARIABLE(
-      new ProcessViewDto(ProcessViewEntity.VARIABLE, ViewProperty.VARIABLE(null, null))),
+      new ProcessViewDto(ProcessViewEntity.VARIABLE, ViewProperty.variable(null, null))),
   PROCESS_VIEW_USER_TASK_FREQUENCY(new ProcessViewDto(USER_TASK, FREQUENCY)),
   PROCESS_VIEW_USER_TASK_DURATION(new ProcessViewDto(USER_TASK, DURATION));
 
   private final ProcessViewDto processViewDto;
   private final ProcessPartDto processPartDto;
 
-  ProcessView(ProcessViewDto processViewDto) {
+  ProcessView(final ProcessViewDto processViewDto) {
     this.processViewDto = processViewDto;
-    this.processPartDto = null;
+    processPartDto = null;
+  }
+
+  private ProcessView(final ProcessViewDto processViewDto, final ProcessPartDto processPartDto) {
+    this.processViewDto = processViewDto;
+    this.processPartDto = processPartDto;
   }
 
   public boolean isFrequency() {
     return processViewDto.getFirstProperty().equals(FREQUENCY);
+  }
+
+  public ProcessViewDto getProcessViewDto() {
+    return processViewDto;
+  }
+
+  public ProcessPartDto getProcessPartDto() {
+    return processPartDto;
   }
 }

@@ -7,11 +7,11 @@
  */
 package io.camunda.optimize.service.db.os.report.filter;
 
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.and;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.exists;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.nested;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.or;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.and;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.exists;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.nested;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.or;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_CANCELED;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_ID;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_INSTANCES;
@@ -20,16 +20,18 @@ import io.camunda.optimize.dto.optimize.query.report.single.process.filter.data.
 import io.camunda.optimize.service.db.filter.FilterContext;
 import io.camunda.optimize.service.util.configuration.condition.OpenSearchCondition;
 import java.util.List;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.query_dsl.ChildScoreMode;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
 @Conditional(OpenSearchCondition.class)
 public class CanceledFlowNodeQueryFilterOS implements QueryFilterOS<CanceledFlowNodeFilterDataDto> {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(CanceledFlowNodeQueryFilterOS.class);
 
   @Override
   public List<Query> filterQueries(
@@ -38,10 +40,10 @@ public class CanceledFlowNodeQueryFilterOS implements QueryFilterOS<CanceledFlow
     return flowNodeFilters.stream().map(this::createFilterQuery).toList();
   }
 
-  private Query createFilterQuery(CanceledFlowNodeFilterDataDto flowNodeFilter) {
+  private Query createFilterQuery(final CanceledFlowNodeFilterDataDto flowNodeFilter) {
     final Query isCanceledQuery =
         and(exists(nestedCanceledFieldLabel()), term(nestedCanceledFieldLabel(), true));
-    List<Query> queries =
+    final List<Query> queries =
         flowNodeFilter.getValues().stream()
             .map(
                 value ->

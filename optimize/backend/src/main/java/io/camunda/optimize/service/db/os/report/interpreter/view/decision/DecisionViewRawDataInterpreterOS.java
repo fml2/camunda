@@ -8,9 +8,9 @@
 package io.camunda.optimize.service.db.os.report.interpreter.view.decision;
 
 import static io.camunda.optimize.service.db.DatabaseConstants.MAX_RESPONSE_SIZE_LIMIT;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.transformSortOrder;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.UnitDSL.seconds;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.transformSortOrder;
+import static io.camunda.optimize.service.db.os.client.dsl.UnitDSL.seconds;
 import static io.camunda.optimize.service.db.schema.index.DecisionInstanceIndex.INPUTS;
 import static io.camunda.optimize.service.db.schema.index.DecisionInstanceIndex.OUTPUTS;
 import static io.camunda.optimize.service.exceptions.ExceptionHelper.safe;
@@ -41,9 +41,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.FieldSort;
 import org.opensearch.client.opensearch._types.NestedSortValue;
 import org.opensearch.client.opensearch._types.SortOptions;
@@ -54,19 +51,32 @@ import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
 import org.opensearch.client.opensearch.core.search.Hit;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDataInterpreter
     implements DecisionViewInterpreterOS {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(DecisionViewRawDataInterpreterOS.class);
   private final ConfigurationService configurationService;
   private final ObjectMapper objectMapper;
   private final OptimizeOpenSearchClient osClient;
-  @Getter private final DecisionVariableReader decisionVariableReader;
+  private final DecisionVariableReader decisionVariableReader;
+
+  public DecisionViewRawDataInterpreterOS(
+      final ConfigurationService configurationService,
+      final ObjectMapper objectMapper,
+      final OptimizeOpenSearchClient osClient,
+      final DecisionVariableReader decisionVariableReader) {
+    this.configurationService = configurationService;
+    this.objectMapper = objectMapper;
+    this.osClient = osClient;
+    this.decisionVariableReader = decisionVariableReader;
+  }
 
   @Override
   public void adjustSearchRequest(
@@ -86,7 +96,7 @@ public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDat
                 searchRequestBuilder.scroll(
                     seconds(
                         configurationService
-                            .getElasticSearchConfiguration()
+                            .getOpenSearchConfiguration()
                             .getScrollTimeoutInSeconds()));
               } else {
                 if (pag.getLimit() > MAX_RESPONSE_SIZE_LIMIT) {
@@ -103,12 +113,6 @@ public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDat
   public Map<String, Aggregation> createAggregations(
       final ExecutionContext<DecisionReportDataDto, DecisionExecutionPlan> context) {
     return Map.of();
-  }
-
-  @Override
-  public ViewResult createEmptyResult(
-      final ExecutionContext<DecisionReportDataDto, DecisionExecutionPlan> context) {
-    return ViewResult.builder().rawData(new ArrayList<>()).build();
   }
 
   @Override
@@ -133,6 +137,12 @@ public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDat
     return ViewResult.builder().rawData(rawData).build();
   }
 
+  @Override
+  public ViewResult createEmptyResult(
+      final ExecutionContext<DecisionReportDataDto, DecisionExecutionPlan> context) {
+    return ViewResult.builder().rawData(new ArrayList<>()).build();
+  }
+
   private List<DecisionInstanceDto> transformHits(final List<Hit<RawResult>> rawResult) {
     return rawResult.stream()
         .map(
@@ -148,7 +158,7 @@ public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDat
                                 + "it was not possible to deserialize a hit from OpenSearch!"
                                 + " Hit response from OpenSearch: "
                                 + hit.source()),
-                    log))
+                    LOG))
         .toList();
   }
 
@@ -193,7 +203,7 @@ public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDat
                     createSortByVariable(
                         sortByField, sortOrder, INPUT_VARIABLE_PREFIX, INPUTS, type))
             .toList();
-    List<SortOptions> sortOptions = new ArrayList<>(variableSortOptions);
+    final List<SortOptions> sortOptions = new ArrayList<>(variableSortOptions);
     // add default string field as last as it will always be present
     sortOptions.add(defaultSortOptions);
     return sortOptions;
@@ -211,7 +221,7 @@ public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDat
                     createSortByVariable(
                         sortByField, sortOrder, OUTPUT_VARIABLE_PREFIX, OUTPUTS, type))
             .toList();
-    List<SortOptions> sortOptions = new ArrayList<>(variableSortOptions);
+    final List<SortOptions> sortOptions = new ArrayList<>(variableSortOptions);
     // add default string field as last as it will always be present
     sortOptions.add(defaultSortOptions);
     return sortOptions;
@@ -238,5 +248,10 @@ public class DecisionViewRawDataInterpreterOS extends AbstractDecisionViewRawDat
                 .order(sortOrder)
                 .build())
         .build();
+  }
+
+  @Override
+  public DecisionVariableReader getDecisionVariableReader() {
+    return decisionVariableReader;
   }
 }

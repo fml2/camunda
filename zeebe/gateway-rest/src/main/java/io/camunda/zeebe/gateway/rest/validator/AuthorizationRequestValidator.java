@@ -8,47 +8,38 @@
 package io.camunda.zeebe.gateway.rest.validator;
 
 import static io.camunda.zeebe.gateway.rest.validator.ErrorMessages.ERROR_MESSAGE_EMPTY_ATTRIBUTE;
-import static io.camunda.zeebe.gateway.rest.validator.ErrorMessages.ERROR_MESSAGE_EMPTY_NESTED_ATTRIBUTE;
 import static io.camunda.zeebe.gateway.rest.validator.RequestValidator.validate;
 
-import io.camunda.zeebe.gateway.protocol.rest.AuthorizationPatchRequest;
-import io.camunda.zeebe.gateway.protocol.rest.AuthorizationPatchRequestPermissionsInner;
-import java.util.List;
+import io.camunda.zeebe.gateway.protocol.rest.AuthorizationRequest;
 import java.util.Optional;
 import org.springframework.http.ProblemDetail;
 
 public final class AuthorizationRequestValidator {
-  public static Optional<ProblemDetail> validateAuthorizationAssignRequest(
-      final AuthorizationPatchRequest authorizationPatchRequest) {
+
+  public static Optional<ProblemDetail> validateAuthorizationRequest(
+      final AuthorizationRequest request) {
     return validate(
         violations -> {
-          if (authorizationPatchRequest.getAction() == null) {
-            violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("action"));
+          // owner validation
+          if (request.getOwnerId() == null || request.getOwnerId().isEmpty()) {
+            violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("ownerId"));
+          }
+          if (request.getOwnerType() == null) {
+            violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("ownerType"));
           }
 
-          if (authorizationPatchRequest.getResourceType() == null) {
+          // resource validation
+          if (request.getResourceId() == null || request.getResourceId().isEmpty()) {
+            violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("resourceId"));
+          }
+          if (request.getResourceType() == null) {
             violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("resourceType"));
           }
 
-          if (authorizationPatchRequest.getPermissions() == null
-              || authorizationPatchRequest.getPermissions().isEmpty()) {
-            violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("permissions"));
-          } else {
-            authorizationPatchRequest
-                .getPermissions()
-                .forEach(permission -> validatePermission(permission, violations));
+          // permissions validation
+          if (request.getPermissionTypes() == null || request.getPermissionTypes().isEmpty()) {
+            violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("permissionTypes"));
           }
         });
-  }
-
-  private static void validatePermission(
-      final AuthorizationPatchRequestPermissionsInner permission, final List<String> violations) {
-    if (permission.getPermissionType() == null) {
-      violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("permissionType"));
-    } else if (permission.getResourceIds() == null || permission.getResourceIds().isEmpty()) {
-      violations.add(
-          ERROR_MESSAGE_EMPTY_NESTED_ATTRIBUTE.formatted(
-              "resourceIds", permission.getPermissionType()));
-    }
   }
 }

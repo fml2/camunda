@@ -10,7 +10,11 @@ package io.camunda.operate.connect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
@@ -25,9 +29,9 @@ import java.util.List;
 import org.apache.hc.client5.http.async.methods.SimpleHttpRequest;
 import org.apache.hc.client5.http.async.methods.SimpleHttpResponse;
 import org.apache.hc.client5.http.impl.async.CloseableHttpAsyncClient;
+import org.apache.hc.client5.http.impl.async.HttpAsyncClientBuilder;
+import org.apache.hc.client5.http.protocol.HttpClientContext;
 import org.apache.hc.core5.concurrent.FutureCallback;
-import org.apache.hc.core5.http.message.BasicHttpRequest;
-import org.apache.hc.core5.http.protocol.BasicHttpContext;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -102,6 +106,44 @@ public class OpensearchConnectorTest {
   }
 
   @Test
+  public void shouldNotDoClusterHealthCheckWhenDisabled() {
+    final OperateProperties operateProperties = new OperateProperties();
+    final OperateOpensearchProperties osProperties = new OperateOpensearchProperties();
+    osProperties.setHealthCheckEnabled(false);
+    operateProperties.setOpensearch(osProperties);
+    final OpensearchConnector connector = spy(new OpensearchConnector(operateProperties, mock()));
+    doReturn(mock(HttpAsyncClientBuilder.class))
+        .when(connector)
+        .configureHttpClient(any(), any(), any());
+
+    connector.createAsyncOsClient(osProperties, mock());
+    verify(connector, never()).checkHealth(any(OpenSearchAsyncClient.class));
+
+    connector.createOsClient(osProperties, mock());
+    verify(connector, never()).checkHealth(any(OpenSearchClient.class));
+  }
+
+  @Test
+  public void shouldDoClusterHealthCheckWhenDefaultPropertyValuesUsed() {
+    final OperateProperties operateProperties = new OperateProperties();
+    final OperateOpensearchProperties osProperties = new OperateOpensearchProperties();
+    operateProperties.setOpensearch(osProperties);
+    final OpensearchConnector connector =
+        spy(new OpensearchConnector(operateProperties, objectMapper));
+    doReturn(true).when(connector).checkHealth(any(OpenSearchClient.class));
+    doReturn(true).when(connector).checkHealth(any(OpenSearchAsyncClient.class));
+    doReturn(mock(HttpAsyncClientBuilder.class))
+        .when(connector)
+        .configureHttpClient(any(), any(), any());
+
+    connector.createAsyncOsClient(osProperties, mock());
+    verify(connector, times(1)).checkHealth(any(OpenSearchAsyncClient.class));
+
+    connector.createOsClient(osProperties, mock());
+    verify(connector, times(1)).checkHealth(any(OpenSearchClient.class));
+  }
+
+  @Test
   public void syncHasAwsEnabledAndAwsCredentialsSetAndShouldUseAwsCredentials() {
     System.setProperty("aws.accessKeyId", AWS_ACCESS_KEY_ID);
     System.setProperty("aws.secretAccessKey", AWS_SECRET_ACCESS_KEY);
@@ -135,7 +177,7 @@ public class OpensearchConnectorTest {
 
   @Test
   void shouldApplyRequestInterceptorsForOSOperateClient() throws Exception {
-    final var context = new BasicHttpContext();
+    final var context = HttpClientContext.create();
     final var operateProps = new OperateProperties();
     final PluginRepository pluginRepository = new PluginRepository();
     pluginRepository.load(
@@ -164,14 +206,14 @@ public class OpensearchConnectorTest {
     }
 
     // then
-    final var reqWrapper = (BasicHttpRequest) context.getAttribute("http.request");
+    final var reqWrapper = context.getRequest();
 
     Assertions.assertThat(reqWrapper.getFirstHeader("foo").getValue()).isEqualTo("bar");
   }
 
   @Test
   void shouldApplyRequestInterceptorsForOSAsyncOperateClient() throws Exception {
-    final var context = new BasicHttpContext();
+    final var context = HttpClientContext.create();
     final var operateProperties = new OperateProperties();
     final PluginRepository pluginRepository = new PluginRepository();
     pluginRepository.load(
@@ -201,7 +243,7 @@ public class OpensearchConnectorTest {
     }
 
     // then
-    final var reqWrapper = (BasicHttpRequest) context.getAttribute("http.request");
+    final var reqWrapper = context.getRequest();
 
     Assertions.assertThat(reqWrapper.getFirstHeader("foo").getValue()).isEqualTo("bar");
   }

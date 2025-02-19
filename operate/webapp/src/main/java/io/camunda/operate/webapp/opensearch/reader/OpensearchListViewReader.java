@@ -17,7 +17,6 @@ import static io.camunda.webapps.schema.descriptors.operate.template.ListViewTem
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.operate.conditions.OpensearchCondition;
-import io.camunda.operate.entities.OperationEntity;
 import io.camunda.operate.store.opensearch.client.sync.RichOpenSearchClient;
 import io.camunda.operate.store.opensearch.dsl.RequestDSL;
 import io.camunda.operate.util.CollectionUtil;
@@ -28,8 +27,10 @@ import io.camunda.operate.webapp.reader.OperationReader;
 import io.camunda.operate.webapp.rest.dto.listview.ListViewProcessInstanceDto;
 import io.camunda.operate.webapp.rest.dto.listview.ListViewRequestDto;
 import io.camunda.operate.webapp.rest.dto.listview.ListViewResponseDto;
+import io.camunda.operate.webapp.security.permission.PermissionsService;
 import io.camunda.webapps.schema.descriptors.operate.template.ListViewTemplate;
 import io.camunda.webapps.schema.entities.operate.listview.ProcessInstanceForListViewEntity;
+import io.camunda.webapps.schema.entities.operation.OperationEntity;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -58,17 +59,21 @@ public class OpensearchListViewReader implements ListViewReader {
 
   private final OperationReader operationReader;
 
+  private final PermissionsService permissionsService;
+
   public OpensearchListViewReader(
       final RichOpenSearchClient richOpenSearchClient,
       final OpenSearchQueryHelper openSearchQueryHelper,
       final ObjectMapper objectMapper,
       final ListViewTemplate listViewTemplate,
-      final OperationReader operationReader) {
+      final OperationReader operationReader,
+      final PermissionsService permissionsService) {
     this.richOpenSearchClient = richOpenSearchClient;
     this.openSearchQueryHelper = openSearchQueryHelper;
     this.objectMapper = objectMapper;
     this.listViewTemplate = listViewTemplate;
     this.operationReader = operationReader;
+    this.permissionsService = permissionsService;
   }
 
   @Override
@@ -88,7 +93,10 @@ public class OpensearchListViewReader implements ListViewReader {
 
     final List<ListViewProcessInstanceDto> processInstanceDtoList =
         ListViewProcessInstanceDto.createFrom(
-            processInstanceEntities, operationsPerProcessInstance, objectMapper);
+            processInstanceEntities,
+            operationsPerProcessInstance,
+            permissionsService,
+            objectMapper);
     result.setProcessInstances(processInstanceDtoList);
     return result;
   }

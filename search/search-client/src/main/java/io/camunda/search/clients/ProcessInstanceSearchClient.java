@@ -10,10 +10,11 @@ package io.camunda.search.clients;
 import io.camunda.search.entities.ProcessInstanceEntity;
 import io.camunda.search.query.ProcessInstanceQuery;
 import io.camunda.search.query.SearchQueryResult;
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.SecurityContext;
 
-public interface ProcessInstanceSearchClient extends AutoCloseable {
+public interface ProcessInstanceSearchClient {
 
-  SearchQueryResult<ProcessInstanceEntity> searchProcessInstances(
-      ProcessInstanceQuery filter, Authentication authentication);
+  SearchQueryResult<ProcessInstanceEntity> searchProcessInstances(ProcessInstanceQuery query);
+
+  ProcessInstanceSearchClient withSecurityContext(SecurityContext securityContext);
 }

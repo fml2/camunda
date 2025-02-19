@@ -14,8 +14,10 @@ import io.atomix.cluster.discovery.BootstrapDiscoveryProvider;
 import io.atomix.cluster.impl.DiscoveryMembershipProtocol;
 import io.atomix.primitive.partition.PartitionId;
 import io.atomix.primitive.partition.PartitionMetadata;
+import io.camunda.zeebe.dynamic.config.changes.ClusterChangeExecutor.NoopClusterChangeExecutor;
 import io.camunda.zeebe.dynamic.config.changes.ConfigurationChangeCoordinator;
 import io.camunda.zeebe.dynamic.config.changes.NoopPartitionChangeExecutor;
+import io.camunda.zeebe.dynamic.config.changes.PartitionScalingChangeExecutor.NoopPartitionScalingChangeExecutor;
 import io.camunda.zeebe.dynamic.config.gossip.ClusterConfigurationGossiperConfig;
 import io.camunda.zeebe.dynamic.config.state.ClusterConfigurationChangeOperation.PartitionChangeOperation.PartitionJoinOperation;
 import io.camunda.zeebe.dynamic.config.state.ClusterConfigurationChangeOperation.PartitionChangeOperation.PartitionLeaveOperation;
@@ -26,6 +28,8 @@ import io.camunda.zeebe.scheduler.future.ActorFuture;
 import io.camunda.zeebe.test.util.socket.SocketUtil;
 import io.camunda.zeebe.util.Either;
 import io.camunda.zeebe.util.FileUtil;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -37,6 +41,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,6 +56,7 @@ class ClusterConfigurationManagementIntegrationTest {
       List.of(createNode("0"), createNode("1"), createNode("2"));
   private final Map<Integer, TestNode> nodes = new HashMap<>();
   private Set<MemberId> clusterMemberIds;
+  @AutoClose private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
   @BeforeEach
   void setup() {
@@ -179,7 +185,7 @@ class ClusterConfigurationManagementIntegrationTest {
                 Either.right(
                     List.of(
                         new PartitionJoinOperation(MemberId.from("0"), 2, 1),
-                        new PartitionLeaveOperation(MemberId.from("1"), 1))))
+                        new PartitionLeaveOperation(MemberId.from("1"), 1, 1))))
         .join();
 
     // then
@@ -211,7 +217,7 @@ class ClusterConfigurationManagementIntegrationTest {
                 Either.right(
                     List.of(
                         new PartitionJoinOperation(MemberId.from("0"), 2, 1),
-                        new PartitionLeaveOperation(MemberId.from("1"), 1),
+                        new PartitionLeaveOperation(MemberId.from("1"), 1, 1),
                         new PartitionJoinOperation(MemberId.from("1"), 1, 1))))
         .join();
 
@@ -233,7 +239,7 @@ class ClusterConfigurationManagementIntegrationTest {
   }
 
   private AtomixCluster createClusterNode(final Node localNode, final Collection<Node> nodes) {
-    return AtomixCluster.builder()
+    return AtomixCluster.builder(meterRegistry)
         .withAddress(localNode.address())
         .withMemberId(localNode.id().id())
         .withMembershipProvider(new BootstrapDiscoveryProvider(nodes))
@@ -249,8 +255,10 @@ class ClusterConfigurationManagementIntegrationTest {
             cluster.getCommunicationService(),
             cluster.getMembershipService(),
             new ClusterConfigurationGossiperConfig(
-                true, Duration.ofSeconds(1), Duration.ofMillis(100), 2),
-            true);
+                Duration.ofSeconds(1), Duration.ofMillis(100), 2),
+            true,
+            new NoopClusterChangeExecutor(),
+            meterRegistry);
     return new TestNode(cluster, service);
   }
 
@@ -309,7 +317,8 @@ class ClusterConfigurationManagementIntegrationTest {
       startFuture.onComplete(
           (ignore, error) -> {
             if (error == null) {
-              service.registerPartitionChangeExecutor(new NoopPartitionChangeExecutor());
+              service.registerPartitionChangeExecutors(
+                  new NoopPartitionChangeExecutor(), new NoopPartitionScalingChangeExecutor());
             }
           },
           Runnable::run);

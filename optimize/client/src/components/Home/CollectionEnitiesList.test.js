@@ -1,8 +1,9 @@
 /*
- * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
- * under one or more contributor license agreements. Licensed under a proprietary license.
- * See the License.txt file for more information. You may not use this file
- * except in compliance with the proprietary license.
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
  */
 
 import {runAllEffects} from 'react';
@@ -11,15 +12,20 @@ import {shallow} from 'enzyme';
 import {ReportTemplateModal, KpiCreationModal, DashboardTemplateModal} from 'components';
 
 import CollectionEnitiesList from './CollectionEnitiesList';
+import {importEntity} from './service';
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
-  useParams: jest.fn().mockReturnValue({1: 'aCollectionId'}),
+  useParams: jest.fn().mockReturnValue({1: 'aCollectionId/'}),
+}));
+
+jest.mock('./service', () => ({
+  importEntity: jest.fn(),
 }));
 
 jest.mock('hooks', () => ({
   useErrorHandling: jest.fn().mockImplementation(() => ({
-    mightFail: jest.fn().mockImplementation((data, cb, err, final) => {
+    mightFail: jest.fn().mockImplementation((data, cb, _err, final) => {
       cb(data);
       final?.();
     }),
@@ -99,18 +105,33 @@ it('should pass entity to on delete', () => {
   expect(deleteEntitySpy).toBeCalledWith(entities[0]);
 });
 
-it('should call importEntity when the import button is clicked', () => {
+it('should call importEntity with correct id when the import button is clicked', () => {
+  // Given
+  const mockFileContent = 'mock file content';
   const readAsTextSpy = jest.fn();
-  global.FileReader = jest.fn(() => ({
+  const addEventListenerSpy = jest.fn();
+  const fileReaderMock = {
+    addEventListener: addEventListenerSpy,
     readAsText: readAsTextSpy,
-    addEventListener: jest.fn(),
-  }));
+  };
+
+  //  When: simulate file input change
+  global.FileReader = jest.fn(() => fileReaderMock);
 
   const node = shallow(<CollectionEnitiesList {...props} />);
 
   node.find('input').simulate('change');
 
+  // Then
   expect(readAsTextSpy).toHaveBeenCalled();
+
+  // When: emulate the 'load' event
+  const loadListener = addEventListenerSpy.mock.calls[0][1];
+  fileReaderMock.result = mockFileContent;
+  loadListener();
+
+  // Then
+  expect(importEntity).toHaveBeenCalledWith(mockFileContent, 'aCollectionId');
 });
 
 it('should redirect to the edit page when the edit button is clicked', () => {

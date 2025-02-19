@@ -5,9 +5,9 @@
 # Both ubuntu and eclipse-temurin are pinned via digest and not by a strict version tag, as Renovate
 # has trouble with custom versioning schemes
 ARG BASE_IMAGE="ubuntu:noble"
-ARG BASE_DIGEST="sha256:dfc10878be8d8fc9c61cbff33166cb1d1fe44391539243703c72766894fa834a"
+ARG BASE_DIGEST="sha256:72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782"
 ARG JDK_IMAGE="eclipse-temurin:21-jdk-noble"
-ARG JDK_DIGEST="sha256:48e264b4a3393475e0d778885687adf6012b3ff25f83b6a6bafbcd42a3ffcc65"
+ARG JDK_DIGEST="sha256:81eb35bebddbc3af193bb4c9346d480a2a7ae0f1ec10e54d675bc3ba936ac113"
 
 # set to "build" to build camunda from scratch instead of using a distball
 ARG DIST="distball"
@@ -81,7 +81,7 @@ WORKDIR /camunda
 ENV MAVEN_OPTS -XX:MaxRAMPercentage=80
 COPY --link . ./
 RUN --mount=type=cache,target=/root/.m2,rw \
-    ./mvnw -B -am -pl dist package -T1C -D skipChecks -D skipTests -D skipOptimize && \
+    ./mvnw -B -am -pl dist package -T1C -D skipChecks -D skipTests && \
     mv dist/target/camunda-zeebe .
 
 ### Extract camunda from distball ###

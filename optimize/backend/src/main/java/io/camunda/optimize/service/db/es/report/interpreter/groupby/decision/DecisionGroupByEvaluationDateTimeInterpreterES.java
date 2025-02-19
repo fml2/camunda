@@ -40,21 +40,32 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class DecisionGroupByEvaluationDateTimeInterpreterES
     extends AbstractDecisionGroupByInterpreterES {
+
   private final DateAggregationServiceES dateAggregationService;
   private final MinMaxStatsServiceES minMaxStatsService;
   private final DecisionQueryFilterEnhancerES queryFilterEnhancer;
-  @Getter private final DecisionDistributedByNoneInterpreterES distributedByInterpreter;
-  @Getter private final DecisionViewInterpreterFacadeES viewInterpreter;
+  private final DecisionDistributedByNoneInterpreterES distributedByInterpreter;
+  private final DecisionViewInterpreterFacadeES viewInterpreter;
+
+  public DecisionGroupByEvaluationDateTimeInterpreterES(
+      final DateAggregationServiceES dateAggregationService,
+      final MinMaxStatsServiceES minMaxStatsService,
+      final DecisionQueryFilterEnhancerES queryFilterEnhancer,
+      final DecisionDistributedByNoneInterpreterES distributedByInterpreter,
+      final DecisionViewInterpreterFacadeES viewInterpreter) {
+    this.dateAggregationService = dateAggregationService;
+    this.minMaxStatsService = minMaxStatsService;
+    this.queryFilterEnhancer = queryFilterEnhancer;
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Map<String, Aggregation.Builder.ContainerBuilder> createAggregation(
@@ -122,7 +133,7 @@ public class DecisionGroupByEvaluationDateTimeInterpreterES
 
     final Optional<Map<String, Aggregate>> unwrappedLimitedAggregations =
         unwrapFilterLimitedAggregations(aggregations);
-    Map<String, Map<String, Aggregate>> keyToAggregationMap;
+    final Map<String, Map<String, Aggregate>> keyToAggregationMap;
     if (unwrappedLimitedAggregations.isPresent()) {
       keyToAggregationMap =
           dateAggregationService.mapDateAggregationsToKeyAggregationMap(
@@ -150,5 +161,13 @@ public class DecisionGroupByEvaluationDateTimeInterpreterES
   @Override
   public Set<DecisionGroupBy> getSupportedGroupBys() {
     return Set.of(DECISION_GROUP_BY_EVALUATION_DATE_TIME);
+  }
+
+  public DecisionDistributedByNoneInterpreterES getDistributedByInterpreter() {
+    return this.distributedByInterpreter;
+  }
+
+  public DecisionViewInterpreterFacadeES getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }

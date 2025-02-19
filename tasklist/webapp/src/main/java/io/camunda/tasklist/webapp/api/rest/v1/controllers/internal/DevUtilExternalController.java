@@ -9,12 +9,12 @@ package io.camunda.tasklist.webapp.api.rest.v1.controllers.internal;
 
 import io.camunda.tasklist.es.RetryElasticsearchClient;
 import io.camunda.tasklist.property.TasklistProperties;
-import io.camunda.tasklist.schema.indices.FormIndex;
-import io.camunda.tasklist.schema.indices.ProcessIndex;
 import io.camunda.tasklist.schema.manager.SchemaManager;
 import io.camunda.tasklist.webapp.es.cache.ProcessCache;
 import io.camunda.tasklist.webapp.security.TasklistURIs;
-import io.camunda.tasklist.webapp.security.se.SearchEngineUserDetailsService;
+import io.camunda.webapps.schema.descriptors.ComponentNames;
+import io.camunda.webapps.schema.descriptors.operate.index.ProcessIndex;
+import io.camunda.webapps.schema.descriptors.tasklist.index.FormIndex;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,13 +45,13 @@ public class DevUtilExternalController {
   @Qualifier("tasklistEsClient")
   private RestHighLevelClient esClient;
 
-  @Autowired private SearchEngineUserDetailsService searchEngineUserDetailsService;
-
   @Autowired private RetryElasticsearchClient retryElasticsearchClient;
 
   @Autowired private ProcessCache processCache;
 
-  @Autowired private ProcessIndex processIndex;
+  @Autowired
+  @Qualifier("tasklistProcessIndex")
+  private ProcessIndex processIndex;
 
   @Autowired private TasklistProperties tasklistProperties;
 
@@ -71,7 +71,11 @@ public class DevUtilExternalController {
 
     final Set<String> indices =
         retryElasticsearchClient
-            .getIndexNames(tasklistProperties.getElasticsearch().getIndexPrefix() + "*")
+            .getIndexNames(
+                tasklistProperties.getElasticsearch().getIndexPrefix()
+                    + "*"
+                    + ComponentNames.TASK_LIST
+                    + "*")
             .stream()
             .filter(
                 f ->
@@ -83,7 +87,6 @@ public class DevUtilExternalController {
     esClient.indices().delete(deleteRequest, RequestOptions.DEFAULT);
     processCache.clearCache();
     schemaManager.createSchema();
-    searchEngineUserDetailsService.initializeUsers();
     return ResponseEntity.ok().build();
   }
 }

@@ -9,6 +9,8 @@ package io.camunda.optimize.service.importing;
 
 import static io.camunda.optimize.service.db.DatabaseConstants.ZEEBE_PROCESS_INSTANCE_INDEX_NAME;
 import static io.camunda.optimize.service.util.importing.ZeebeConstants.ZEEBE_DEFAULT_TENANT_ID;
+import static io.camunda.optimize.util.ZeebeBpmnModels.ACTIVATE_ELEMENTS;
+import static io.camunda.optimize.util.ZeebeBpmnModels.ADHOC_SUB_PROCESS;
 import static io.camunda.optimize.util.ZeebeBpmnModels.COMPENSATION_EVENT_TASK;
 import static io.camunda.optimize.util.ZeebeBpmnModels.CONVERGING_GATEWAY;
 import static io.camunda.optimize.util.ZeebeBpmnModels.DIVERGING_GATEWAY;
@@ -33,7 +35,9 @@ import static io.camunda.optimize.util.ZeebeBpmnModels.SIGNAL_START_INT_SUB_PROC
 import static io.camunda.optimize.util.ZeebeBpmnModels.SIGNAL_START_NON_INT_SUB_PROCESS;
 import static io.camunda.optimize.util.ZeebeBpmnModels.SIGNAL_THROW;
 import static io.camunda.optimize.util.ZeebeBpmnModels.START_EVENT;
+import static io.camunda.optimize.util.ZeebeBpmnModels.TASK;
 import static io.camunda.optimize.util.ZeebeBpmnModels.USER_TASK;
+import static io.camunda.optimize.util.ZeebeBpmnModels.createAdHocSubProcess;
 import static io.camunda.optimize.util.ZeebeBpmnModels.createCompensationEventProcess;
 import static io.camunda.optimize.util.ZeebeBpmnModels.createInclusiveGatewayProcess;
 import static io.camunda.optimize.util.ZeebeBpmnModels.createInclusiveGatewayProcessWithConverging;
@@ -48,6 +52,8 @@ import static io.camunda.optimize.util.ZeebeBpmnModels.createTerminateEndEventPr
 import static io.camunda.zeebe.protocol.record.intent.ProcessInstanceIntent.ELEMENT_COMPLETED;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.client.api.response.Process;
+import io.camunda.client.api.response.ProcessInstanceEvent;
 import io.camunda.optimize.AbstractCCSMIT;
 import io.camunda.optimize.dto.optimize.ProcessInstanceConstants;
 import io.camunda.optimize.dto.optimize.ProcessInstanceDto;
@@ -58,12 +64,11 @@ import io.camunda.optimize.exception.OptimizeIntegrationTestException;
 import io.camunda.optimize.service.db.DatabaseConstants;
 import io.camunda.optimize.service.exceptions.OptimizeRuntimeException;
 import io.camunda.optimize.test.it.extension.db.TermsQueryContainer;
-import io.camunda.zeebe.client.api.response.Process;
-import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
 import io.camunda.zeebe.protocol.record.intent.ProcessInstanceIntent;
 import io.camunda.zeebe.protocol.record.intent.VariableIntent;
 import io.camunda.zeebe.protocol.record.value.BpmnElementType;
+import java.io.IOException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -72,7 +77,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import lombok.SneakyThrows;
 import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIf;
@@ -344,7 +348,6 @@ public class ZeebeProcessInstanceImportIT extends AbstractCCSMIT {
   }
 
   @Test
-  @SneakyThrows
   public void
       importZeebeProcessInstanceDataFromMultipleDays_allDataSavedToOptimizeProcessInstance() {
     // given
@@ -354,7 +357,11 @@ public class ZeebeProcessInstanceImportIT extends AbstractCCSMIT {
 
     // when
     waitUntilMinimumProcessInstanceEventsExportedCount(4);
-    zeebeExtension.setClock(Instant.now().plus(1, ChronoUnit.DAYS));
+    try {
+      zeebeExtension.setClock(Instant.now().plus(1, ChronoUnit.DAYS));
+    } catch (final IOException | InterruptedException e) {
+      throw new OptimizeRuntimeException(e);
+    }
     zeebeExtension.completeTaskForInstanceWithJobType(SERVICE_TASK);
     waitUntilMinimumProcessInstanceEventsExportedCount(8);
     importAllZeebeEntitiesFromScratch();
@@ -759,6 +766,32 @@ public class ZeebeProcessInstanceImportIT extends AbstractCCSMIT {
             });
   }
 
+  @Test
+  public void importZeebeProcessInstanceData_processContainsAdHocSubProcess() {
+    // given
+    final BpmnModelInstance adHocSubProcessModel =
+        createAdHocSubProcess(
+            "someProcess",
+            process ->
+                process.zeebeActiveElementsCollectionExpression(ACTIVATE_ELEMENTS).task(TASK));
+    final String processId = zeebeExtension.deployProcess(adHocSubProcessModel).getBpmnProcessId();
+    zeebeExtension.startProcessInstanceWithVariables(
+        processId, Map.of(ACTIVATE_ELEMENTS, List.of(TASK)));
+
+    // when
+    waitUntilInstanceRecordWithElementIdExported(END_EVENT);
+    importAllZeebeEntitiesFromScratch();
+
+    // then
+    assertThat(databaseIntegrationTestExtension.getAllProcessInstances())
+        .singleElement()
+        .satisfies(
+            instance ->
+                assertThat(instance.getFlowNodeInstances())
+                    .extracting(FlowNodeInstanceDto::getFlowNodeId)
+                    .contains(START_EVENT, ADHOC_SUB_PROCESS, TASK, END_EVENT));
+  }
+
   // Test backwards compatibility for default tenantID applied when importing records pre multi
   // tenancy introduction
   @DisabledIf("isZeebeVersionWithMultiTenancy")
@@ -955,7 +988,6 @@ public class ZeebeProcessInstanceImportIT extends AbstractCCSMIT {
         + instance.getIncidents().size();
   }
 
-  @SneakyThrows
   private void updateProcessInstanceNestedDocLimit(
       final String processDefinitionKey, final int nestedDocLimit) {
     databaseIntegrationTestExtension.updateProcessInstanceNestedDocLimit(

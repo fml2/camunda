@@ -35,16 +35,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 
-@Slf4j
-@RequiredArgsConstructor
 public abstract class AbstractProcessGroupByModelElementDateInterpreterES
     extends AbstractProcessGroupByInterpreterES {
+
   private static final String ELEMENT_AGGREGATION = "elementAggregation";
   private static final String FILTERED_ELEMENTS_AGGREGATION = "filteredElements";
   private static final String MODEL_ELEMENT_TYPE_FILTER_AGGREGATION = "filteredElementsByType";
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(AbstractProcessGroupByModelElementDateInterpreterES.class);
+
+  public AbstractProcessGroupByModelElementDateInterpreterES() {}
 
   protected abstract DateAggregationServiceES getDateAggregationService();
 
@@ -118,7 +120,7 @@ public abstract class AbstractProcessGroupByModelElementDateInterpreterES
       final ExecutionContext<ProcessReportDataDto, ?> context,
       final Map<String, Aggregation.Builder.ContainerBuilder> aggregationToWrap,
       final Map<String, Aggregation.Builder.ContainerBuilder> distributedBySubAggregations) {
-    Aggregation.Builder.ContainerBuilder builder =
+    final Aggregation.Builder.ContainerBuilder builder =
         new Aggregation.Builder()
             .filter(getModelElementTypeFilterQuery())
             .aggregations(
@@ -137,7 +139,7 @@ public abstract class AbstractProcessGroupByModelElementDateInterpreterES
     // enrichContextWithAllExpectedDistributedByKeys
     distributedBySubAggregations.forEach((k, v) -> builder.aggregations(k, v.build()));
 
-    Aggregation.Builder.ContainerBuilder b =
+    final Aggregation.Builder.ContainerBuilder b =
         new Aggregation.Builder()
             .nested(n -> n.path(getPathToElementField()))
             .aggregations(MODEL_ELEMENT_TYPE_FILTER_AGGREGATION, builder.build());
@@ -179,7 +181,7 @@ public abstract class AbstractProcessGroupByModelElementDateInterpreterES
         .enrichContextWithAllExpectedDistributedByKeys(
             context, filteredFlowNodesByType.aggregations());
 
-    Map<String, Map<String, Aggregate>> keyToAggregationMap;
+    final Map<String, Map<String, Aggregate>> keyToAggregationMap;
     if (unwrappedLimitedAggregations.isPresent()) {
       keyToAggregationMap =
           getDateAggregationService()

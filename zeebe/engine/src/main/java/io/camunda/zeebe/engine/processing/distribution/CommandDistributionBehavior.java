@@ -11,6 +11,7 @@ import io.camunda.zeebe.engine.processing.streamprocessor.writers.SideEffectWrit
 import io.camunda.zeebe.engine.processing.streamprocessor.writers.StateWriter;
 import io.camunda.zeebe.engine.processing.streamprocessor.writers.TypedCommandWriter;
 import io.camunda.zeebe.engine.processing.streamprocessor.writers.Writers;
+import io.camunda.zeebe.engine.state.distribution.DistributionQueue;
 import io.camunda.zeebe.engine.state.immutable.DistributionState;
 import io.camunda.zeebe.engine.state.routing.RoutingInfo;
 import io.camunda.zeebe.protocol.Protocol;
@@ -54,8 +55,6 @@ public final class CommandDistributionBehavior {
   private final CommandDistributionRecord commandDistributionDistributing =
       new CommandDistributionRecord();
   private final CommandDistributionRecord commandDistributionEnqueued =
-      new CommandDistributionRecord();
-  private final CommandDistributionRecord commandDistributionAcknowledge =
       new CommandDistributionRecord();
   private final CommandDistributionRecord commandDistributionContinuation =
       new CommandDistributionRecord();
@@ -247,10 +246,9 @@ public final class CommandDistributionBehavior {
   public <T extends UnifiedRecordValue> void acknowledgeCommand(final TypedRecord<T> command) {
     final long distributionKey = command.getKey();
 
-    commandDistributionAcknowledge.reset();
-
-    final var distributionRecord =
-        commandDistributionAcknowledge
+    // ACKNOWLEDGE must be a new record as it is transmitted as a side effect
+    final var acknowledgeRecord =
+        new CommandDistributionRecord()
             .setPartitionId(currentPartitionId)
             .setValueType(command.getValueType())
             .setIntent(command.getIntent());
@@ -263,7 +261,7 @@ public final class CommandDistributionBehavior {
               ValueType.COMMAND_DISTRIBUTION,
               CommandDistributionIntent.ACKNOWLEDGE,
               distributionKey,
-              distributionRecord);
+              acknowledgeRecord);
           return true;
         });
   }
@@ -297,7 +295,15 @@ public final class CommandDistributionBehavior {
 
     DistributionRequestBuilder inQueue(String queue);
 
+    default DistributionRequestBuilder inQueue(final DistributionQueue queue) {
+      return inQueue(queue.getQueueId());
+    }
+
     ContinuationRequestBuilder afterQueue(String queue);
+
+    default ContinuationRequestBuilder afterQueue(final DistributionQueue queue) {
+      return afterQueue(queue.getQueueId());
+    }
   }
 
   public interface DistributionRequestBuilder {

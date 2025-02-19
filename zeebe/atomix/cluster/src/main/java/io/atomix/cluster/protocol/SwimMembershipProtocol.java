@@ -36,6 +36,7 @@ import io.atomix.utils.net.Address;
 import io.atomix.utils.serializer.Namespace;
 import io.atomix.utils.serializer.Namespaces;
 import io.atomix.utils.serializer.Serializer;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -62,7 +63,6 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 
 /** SWIM group membership protocol implementation. */
 public class SwimMembershipProtocol
@@ -100,11 +100,8 @@ public class SwimMembershipProtocol
   private final List<SwimMember> randomMembers = Lists.newCopyOnWriteArrayList();
   private final Map<MemberId, ImmutableMember> updates = new LinkedHashMap<>();
   private final List<SwimMember> syncMembers = new ArrayList<>();
-  private final ScheduledExecutorService swimScheduler =
-      Executors.newSingleThreadScheduledExecutor(
-          namedThreads("atomix-cluster-heartbeat-sender", LOGGER));
-  private final ExecutorService eventExecutor =
-      Executors.newSingleThreadExecutor(namedThreads("atomix-cluster-events", LOGGER));
+  private final ScheduledExecutorService swimScheduler;
+  private final ExecutorService eventExecutor;
   private final AtomicInteger probeCounter = new AtomicInteger();
   private NodeDiscoveryService discoveryService;
   private BootstrapService bootstrapService;
@@ -113,22 +110,31 @@ public class SwimMembershipProtocol
       (address, payload) ->
           handleProbeRequest(SERIALIZER.decode(payload)).thenApply(SERIALIZER::encode);
   private final NodeDiscoveryEventListener discoveryEventListener = this::handleDiscoveryEvent;
+  private volatile Properties localProperties = new Properties();
+  private ScheduledFuture<?> gossipFuture;
+  private ScheduledFuture<?> probeFuture;
+  private ScheduledFuture<?> syncFuture;
+  private final SwimMembershipProtocolMetrics swimMembershipProtocolMetrics;
   private final BiFunction<Address, byte[], byte[]> syncHandler =
       (address, payload) -> SERIALIZER.encode(handleSync(SERIALIZER.decode(payload)));
   private final BiFunction<Address, byte[], byte[]> probeHandler =
       (address, payload) -> SERIALIZER.encode(handleProbe(SERIALIZER.decode(payload)));
   private final BiConsumer<Address, byte[]> gossipListener =
       (address, payload) -> handleGossipUpdates(SERIALIZER.decode(payload));
-  private volatile Properties localProperties = new Properties();
-  private ScheduledFuture<?> gossipFuture;
-  private ScheduledFuture<?> probeFuture;
-  private ScheduledFuture<?> syncFuture;
 
-  private final SwimMembershipProtocolMetrics swimMembershipProtocolMetrics =
-      new SwimMembershipProtocolMetrics();
-
-  SwimMembershipProtocol(final SwimMembershipProtocolConfig config) {
+  SwimMembershipProtocol(
+      final SwimMembershipProtocolConfig config,
+      final String actorSchedulerName,
+      final MeterRegistry registry) {
     this.config = config;
+    swimMembershipProtocolMetrics = new SwimMembershipProtocolMetrics(registry);
+
+    swimScheduler =
+        Executors.newSingleThreadScheduledExecutor(
+            namedThreads("atomix-cluster-heartbeat-sender", LOGGER, actorSchedulerName));
+    eventExecutor =
+        Executors.newSingleThreadExecutor(
+            namedThreads("atomix-cluster-events", LOGGER, actorSchedulerName));
   }
 
   /**
@@ -136,8 +142,8 @@ public class SwimMembershipProtocol
    *
    * @return a new bootstrap provider builder
    */
-  public static SwimMembershipProtocolBuilder builder() {
-    return new SwimMembershipProtocolBuilder();
+  public static SwimMembershipProtocolBuilder builder(final MeterRegistry registry) {
+    return new SwimMembershipProtocolBuilder(registry);
   }
 
   @Override
@@ -158,15 +164,6 @@ public class SwimMembershipProtocol
   @Override
   public CompletableFuture<Void> join(
       final BootstrapService bootstrap, final NodeDiscoveryService discovery, final Member member) {
-    return join(bootstrap, discovery, member, "");
-  }
-
-  @Override
-  public CompletableFuture<Void> join(
-      final BootstrapService bootstrap,
-      final NodeDiscoveryService discovery,
-      final Member member,
-      final String actorSchedulerName) {
     if (started.compareAndSet(false, true)) {
       bootstrapService = bootstrap;
       discoveryService = discovery;
@@ -192,9 +189,6 @@ public class SwimMembershipProtocol
       LOGGER.debug("Nodes from discovery service {}", discoveryService.getNodes());
 
       registerHandlers();
-
-      swimScheduler.execute(() -> MDC.put("actor-scheduler", actorSchedulerName));
-      eventExecutor.execute(() -> MDC.put("actor-scheduler", actorSchedulerName));
 
       scheduleGossip();
       scheduleProbe();
@@ -399,7 +393,7 @@ public class SwimMembershipProtocol
    */
   private void recordUpdate(final ImmutableMember member) {
     updates.put(member.id(), member);
-    SwimMembershipProtocolMetrics.updateMemberIncarnationNumber(
+    swimMembershipProtocolMetrics.updateMemberIncarnationNumber(
         member.id().id(), member.incarnationNumber);
   }
 
@@ -897,8 +891,11 @@ public class SwimMembershipProtocol
     }
 
     @Override
-    public GroupMembershipProtocol newProtocol(final SwimMembershipProtocolConfig config) {
-      return new SwimMembershipProtocol(config);
+    public GroupMembershipProtocol newProtocol(
+        final SwimMembershipProtocolConfig config,
+        final String actorSchedulerName,
+        final MeterRegistry registry) {
+      return new SwimMembershipProtocol(config, actorSchedulerName, registry);
     }
   }
 

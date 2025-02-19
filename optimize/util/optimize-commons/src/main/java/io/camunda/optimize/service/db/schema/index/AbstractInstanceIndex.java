@@ -16,7 +16,6 @@ import co.elastic.clients.elasticsearch._types.mapping.KeywordProperty;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import io.camunda.optimize.service.db.schema.DefaultIndexMappingCreator;
 import io.camunda.optimize.service.db.schema.DynamicIndexable;
-import lombok.Getter;
 
 public abstract class AbstractInstanceIndex<TBuilder> extends DefaultIndexMappingCreator<TBuilder>
     implements DynamicIndexable {
@@ -27,11 +26,11 @@ public abstract class AbstractInstanceIndex<TBuilder> extends DefaultIndexMappin
   public static final String N_GRAM_FIELD = "nGramField";
   public static final String LOWERCASE_FIELD = "lowercaseField";
 
+  private final String key;
+
   protected AbstractInstanceIndex(final String key) {
     this.key = key;
   }
-
-  @Getter private final String key;
 
   public abstract String getDefinitionKeyFieldName();
 
@@ -39,7 +38,7 @@ public abstract class AbstractInstanceIndex<TBuilder> extends DefaultIndexMappin
 
   public abstract String getTenantIdFieldName();
 
-  protected KeywordProperty.Builder addValueMultifields(KeywordProperty.Builder builder) {
+  protected KeywordProperty.Builder addValueMultifields(final KeywordProperty.Builder builder) {
     return builder
         .fields(N_GRAM_FIELD, Property.of(p -> p.text(t -> t.analyzer(LOWERCASE_NGRAM))))
         .fields(
@@ -55,5 +54,10 @@ public abstract class AbstractInstanceIndex<TBuilder> extends DefaultIndexMappin
             Property.of(p -> p.date(t -> t.format(OPTIMIZE_DATE_FORMAT).ignoreMalformed(true))))
         .fields(MULTIVALUE_FIELD_LONG, Property.of(p -> p.long_(t -> t.ignoreMalformed(true))))
         .fields(MULTIVALUE_FIELD_DOUBLE, Property.of(p -> p.double_(t -> t.ignoreMalformed(true))));
+  }
+
+  @Override
+  public String getKey() {
+    return key;
   }
 }

@@ -25,21 +25,19 @@ import io.camunda.optimize.service.util.mapper.OptimizeDateTimeFormatterFactory;
 import io.camunda.optimize.upgrade.es.SchemaUpgradeClientES;
 import io.camunda.optimize.upgrade.os.SchemaUpgradeClientOS;
 import io.camunda.optimize.upgrade.plan.UpgradeExecutionDependencies;
-import jakarta.ws.rs.NotSupportedException;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class SchemaUpgradeClientFactory {
+public final class SchemaUpgradeClientFactory {
 
-  public static SchemaUpgradeClient<?, ?> createSchemaUpgradeClient(
+  private SchemaUpgradeClientFactory() {}
+
+  public static SchemaUpgradeClient<?, ?, ?> createSchemaUpgradeClient(
       final UpgradeExecutionDependencies upgradeDependencies) {
     if (upgradeDependencies.databaseType().equals(DatabaseType.ELASTICSEARCH)) {
       final OptimizeElasticsearchClient esClient =
           (OptimizeElasticsearchClient) upgradeDependencies.databaseClient();
       final ElasticSearchMetadataService metadataService =
           (ElasticSearchMetadataService) upgradeDependencies.metadataService();
-      MappingMetadataUtilES mappingUtil = new MappingMetadataUtilES(esClient);
+      final MappingMetadataUtilES mappingUtil = new MappingMetadataUtilES(esClient);
       return new SchemaUpgradeClientES(
           new ElasticSearchSchemaManager(
               metadataService,
@@ -47,6 +45,7 @@ public class SchemaUpgradeClientFactory {
               upgradeDependencies.indexNameService(),
               mappingUtil.getAllMappings(upgradeDependencies.indexNameService().getIndexPrefix())),
           metadataService,
+          upgradeDependencies.configurationService(),
           esClient,
           new ObjectMapperFactory(
                   new OptimizeDateTimeFormatterFactory().getObject(),
@@ -71,7 +70,7 @@ public class SchemaUpgradeClientFactory {
                   upgradeDependencies.configurationService())
               .createOptimizeMapper());
     } else {
-      throw new NotSupportedException(
+      throw new UnsupportedOperationException(
           "Database type "
               + upgradeDependencies.databaseType()
               + " not supported for schema upgrade");
@@ -84,15 +83,16 @@ public class SchemaUpgradeClientFactory {
       final ConfigurationService configurationService,
       final DatabaseClient dbClient) {
 
-    if (dbClient instanceof OptimizeElasticsearchClient esClient) {
+    if (dbClient instanceof final OptimizeElasticsearchClient esClient) {
       return new SchemaUpgradeClientES(
           (ElasticSearchSchemaManager) schemaManager,
           (ElasticSearchMetadataService) metadataService,
+          configurationService,
           esClient,
           new ObjectMapperFactory(
                   new OptimizeDateTimeFormatterFactory().getObject(), configurationService)
               .createOptimizeMapper());
-    } else if (dbClient instanceof OptimizeOpenSearchClient osClient) {
+    } else if (dbClient instanceof final OptimizeOpenSearchClient osClient) {
       return new SchemaUpgradeClientOS(
           (OpenSearchSchemaManager) schemaManager,
           (OpenSearchMetadataService) metadataService,
@@ -101,7 +101,7 @@ public class SchemaUpgradeClientFactory {
                   new OptimizeDateTimeFormatterFactory().getObject(), configurationService)
               .createOptimizeMapper());
     } else {
-      throw new NotSupportedException(
+      throw new UnsupportedOperationException(
           "Database type " + dbClient.getClass() + " not supported for schema upgrade");
     }
   }

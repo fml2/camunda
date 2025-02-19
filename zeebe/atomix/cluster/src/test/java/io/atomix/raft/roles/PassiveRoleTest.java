@@ -35,10 +35,13 @@ import io.atomix.raft.protocol.VersionedAppendRequest;
 import io.atomix.raft.storage.RaftStorage;
 import io.atomix.raft.storage.log.IndexedRaftLogEntry;
 import io.atomix.raft.storage.log.RaftLog;
+import io.camunda.zeebe.journal.CheckedJournalException;
 import io.camunda.zeebe.journal.JournalException;
 import io.camunda.zeebe.journal.JournalException.InvalidChecksum;
 import io.camunda.zeebe.snapshots.PersistedSnapshot;
 import io.camunda.zeebe.snapshots.ReceivableSnapshotStore;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +49,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.rules.Timeout;
 
 public class PassiveRoleTest {
@@ -54,6 +58,7 @@ public class PassiveRoleTest {
   private RaftLog log;
   private PassiveRole role;
   private RaftContext ctx;
+  @AutoClose private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
   @Before
   public void setup() throws IOException {
@@ -76,6 +81,8 @@ public class PassiveRoleTest {
     when(ctx.getPersistedSnapshotStore()).thenReturn(store);
     when(ctx.getTerm()).thenReturn(1L);
     when(ctx.getReplicationMetrics()).thenReturn(mock(RaftReplicationMetrics.class));
+    when(ctx.getMeterRegistry()).thenReturn(meterRegistry);
+    when(ctx.getName()).thenReturn("partition-1");
 
     role = new PassiveRole(ctx);
   }
@@ -106,7 +113,7 @@ public class PassiveRoleTest {
   }
 
   @Test
-  public void shouldFlushAfterAppendRequest() {
+  public void shouldFlushAfterAppendRequest() throws CheckedJournalException {
     // given
     final var entries =
         List.of(
@@ -136,7 +143,7 @@ public class PassiveRoleTest {
   }
 
   @Test
-  public void shouldFlushAfterPartiallyAppendedRequest() {
+  public void shouldFlushAfterPartiallyAppendedRequest() throws CheckedJournalException {
     // given
     final var entries =
         List.of(
@@ -166,7 +173,7 @@ public class PassiveRoleTest {
   }
 
   @Test
-  public void shouldNotFlushIfNoEntryIsAppended() {
+  public void shouldNotFlushIfNoEntryIsAppended() throws CheckedJournalException {
     // given
     final var entries = List.of(new ReplicatableJournalRecord(1, 1, 1, new byte[1]));
     final VersionedAppendRequest request =
@@ -192,7 +199,7 @@ public class PassiveRoleTest {
   }
 
   @Test
-  public void shouldFlushEventWithFailure() {
+  public void shouldFlushEventWithFailure() throws CheckedJournalException {
     // given
     final var entries =
         List.of(
@@ -223,7 +230,7 @@ public class PassiveRoleTest {
   }
 
   @Test
-  public void shouldAppendOldVersion() {
+  public void shouldAppendOldVersion() throws CheckedJournalException {
     // given
     final var entries = List.of(new PersistedRaftRecord(1, 1, 1, 1, new byte[1]));
     final var request = new AppendRequest(2, "a", 0, 0, entries, 1);
@@ -236,5 +243,19 @@ public class PassiveRoleTest {
 
     // then
     assertThat(response.succeeded()).isTrue();
+  }
+
+  @Test
+  public void shouldCompleteFutureWithErrorIfAppendFails() throws CheckedJournalException {
+    // given
+    final var entries = List.of(new PersistedRaftRecord(1, 1, 1, 1, new byte[1]));
+    final var request = new AppendRequest(2, "a", 0, 0, entries, 1);
+    when(log.append(any(PersistedRaftRecord.class))).thenThrow(new IllegalStateException("error"));
+
+    // when
+    final var result =
+        role.handleAppend(ProtocolVersionHandler.transform(request)).toCompletableFuture().join();
+    // then
+    assertThat(result.succeeded()).isFalse();
   }
 }

@@ -7,24 +7,26 @@
  */
 package io.camunda.optimize.service.db.os.report.filter;
 
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.or;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.or;
 
 import io.camunda.optimize.dto.optimize.query.report.single.filter.data.variable.MultipleVariableFilterDataDto;
 import io.camunda.optimize.service.db.filter.FilterContext;
 import io.camunda.optimize.service.util.configuration.condition.OpenSearchCondition;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@RequiredArgsConstructor
-@Slf4j
 @Component
 @Conditional(OpenSearchCondition.class)
 public class ProcessMultiVariableQueryFilterOS extends AbstractProcessVariableQueryFilterOS
     implements QueryFilterOS<MultipleVariableFilterDataDto> {
+
+  private static final Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(ProcessMultiVariableQueryFilterOS.class);
+
+  public ProcessMultiVariableQueryFilterOS() {}
 
   @Override
   public List<Query> filterQueries(
@@ -42,7 +44,7 @@ public class ProcessMultiVariableQueryFilterOS extends AbstractProcessVariableQu
   private Query buildMultiVariableFilterQuery(
       final MultipleVariableFilterDataDto multipleVariableFilter,
       final FilterContext filterContext) {
-    List<Query> queries =
+    final List<Query> queries =
         multipleVariableFilter.getData().stream()
             .map(variableFilter -> createFilterQuery(variableFilter, filterContext.getTimezone()))
             .toList();

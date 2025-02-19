@@ -23,8 +23,6 @@ import io.camunda.optimize.service.util.configuration.condition.OpenSearchCondit
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.opensearch.client.opensearch._types.aggregations.Aggregation;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchResponse;
@@ -32,11 +30,18 @@ import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class DecisionGroupByNoneInterpreterOS extends AbstractDecisionGroupByInterpreterOS {
-  @Getter private final DecisionDistributedByNoneInterpreterOS distributedByInterpreter;
-  @Getter private final DecisionViewInterpreterFacadeOS viewInterpreter;
+
+  private final DecisionDistributedByNoneInterpreterOS distributedByInterpreter;
+  private final DecisionViewInterpreterFacadeOS viewInterpreter;
+
+  public DecisionGroupByNoneInterpreterOS(
+      final DecisionDistributedByNoneInterpreterOS distributedByInterpreter,
+      final DecisionViewInterpreterFacadeOS viewInterpreter) {
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Set<DecisionGroupBy> getSupportedGroupBys() {
@@ -58,7 +63,15 @@ public class DecisionGroupByNoneInterpreterOS extends AbstractDecisionGroupByInt
       final ExecutionContext<DecisionReportDataDto, DecisionExecutionPlan> context) {
     final List<DistributedByResult> distributions =
         distributedByInterpreter.retrieveResult(response, response.aggregations(), context);
-    GroupByResult groupByResult = GroupByResult.createGroupByNone(distributions);
+    final GroupByResult groupByResult = GroupByResult.createGroupByNone(distributions);
     compositeCommandResult.setGroup(groupByResult);
+  }
+
+  public DecisionDistributedByNoneInterpreterOS getDistributedByInterpreter() {
+    return this.distributedByInterpreter;
+  }
+
+  public DecisionViewInterpreterFacadeOS getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }

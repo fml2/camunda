@@ -13,6 +13,8 @@ import {hasType} from 'modules/bpmn-js/utils/hasType';
 import {getEventType} from 'modules/bpmn-js/utils/getEventType';
 import {getEventSubProcessType} from 'modules/bpmn-js/utils/getEventSubProcessType';
 import {isEventSubProcess} from 'modules/bpmn-js/utils/isEventSubProcess';
+import {isMultiInstance} from 'modules/bpmn-js/utils/isMultiInstance';
+import {getMultiInstanceType} from 'modules/bpmn-js/utils/getMultiInstanceType';
 
 type State = {
   isMappedFilterEnabled: boolean;
@@ -69,44 +71,33 @@ class ProcessInstanceMigrationMappingStore {
         return {
           sourceFlowNode: {id: sourceFlowNode.id, name: sourceFlowNode.name},
           selectableTargetFlowNodes: selectableTargetFlowNodes
-            .filter((flowNode) => {
+            .filter((targetFlowNode) => {
               /**
-               * For boundary events allow only target flow nodes with the same event type
+               * For events allow only target flow nodes with the same event type
                */
               if (
                 hasType({
                   businessObject: sourceFlowNode,
-                  types: ['bpmn:BoundaryEvent'],
+                  types: [
+                    'bpmn:StartEvent',
+                    'bpmn:IntermediateCatchEvent',
+                    'bpmn:BoundaryEvent',
+                  ],
                 })
               ) {
                 return (
-                  sourceFlowNode.$type === flowNode.$type &&
-                  getEventType(sourceFlowNode) === getEventType(flowNode)
+                  sourceFlowNode.$type === targetFlowNode.$type &&
+                  getEventType(sourceFlowNode) === getEventType(targetFlowNode)
                 );
               }
 
               /**
-               * For intermediate catch events allow only target flow nodes with the same event type
-               */
-              if (
-                hasType({
-                  businessObject: sourceFlowNode,
-                  types: ['bpmn:IntermediateCatchEvent'],
-                })
-              ) {
-                return (
-                  sourceFlowNode.$type === flowNode.$type &&
-                  getEventType(sourceFlowNode) === getEventType(flowNode)
-                );
-              }
-
-              /**
-               * For event sub processes allow only mapping with the same event type (message or timer)
+               * For event sub processes allow only mapping with the same event type (message, timer or error)
                */
               if (isEventSubProcess({businessObject: sourceFlowNode})) {
                 return (
                   getEventSubProcessType({businessObject: sourceFlowNode}) ===
-                  getEventSubProcessType({businessObject: flowNode})
+                  getEventSubProcessType({businessObject: targetFlowNode})
                 );
               }
 
@@ -115,17 +106,32 @@ class ProcessInstanceMigrationMappingStore {
                */
               if (
                 (isEventSubProcess({businessObject: sourceFlowNode}) &&
-                  !isEventSubProcess({businessObject: flowNode})) ||
+                  !isEventSubProcess({businessObject: targetFlowNode})) ||
                 (!isEventSubProcess({businessObject: sourceFlowNode}) &&
-                  isEventSubProcess({businessObject: flowNode}))
+                  isEventSubProcess({businessObject: targetFlowNode}))
               ) {
                 return false;
               }
 
               /**
+               * Allow mapping only between the same multi instance types,
+               * e.g. sequential multi instance task -> sequential multi instance task
+               */
+              if (
+                isMultiInstance(sourceFlowNode) ||
+                isMultiInstance(targetFlowNode)
+              ) {
+                return (
+                  sourceFlowNode.$type === targetFlowNode.$type &&
+                  getMultiInstanceType(sourceFlowNode) ===
+                    getMultiInstanceType(targetFlowNode)
+                );
+              }
+
+              /**
                * For all other flow nodes allow target flow nodes with the same element type
                */
-              return sourceFlowNode.$type === flowNode.$type;
+              return sourceFlowNode.$type === targetFlowNode.$type;
             })
             .map(({id, name}) => ({
               id,

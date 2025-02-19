@@ -10,6 +10,8 @@ package io.camunda.zeebe.qa.util.cluster;
 import io.camunda.application.MainSupport;
 import io.camunda.application.Profile;
 import io.camunda.application.initializers.HealthConfigurationInitializer;
+import io.camunda.authentication.config.AuthenticationProperties;
+import io.camunda.security.entity.AuthenticationMethod;
 import io.camunda.zeebe.qa.util.cluster.util.ContextOverrideInitializer;
 import io.camunda.zeebe.qa.util.cluster.util.ContextOverrideInitializer.Bean;
 import io.camunda.zeebe.qa.util.cluster.util.RelaxedCollectorRegistry;
@@ -20,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.Banner.Mode;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ApplicationContextInitializer;
@@ -28,6 +32,9 @@ import org.springframework.http.client.ReactorResourceFactory;
 
 public abstract class TestSpringApplication<T extends TestSpringApplication<T>>
     implements TestApplication<T> {
+
+  private static final Logger LOGGER = LoggerFactory.getLogger(TestSpringApplication.class);
+
   private final Class<?>[] springApplications;
   private final Map<String, Bean<?>> beans;
   private final Map<String, Object> propertyOverrides;
@@ -82,6 +89,12 @@ public abstract class TestSpringApplication<T extends TestSpringApplication<T>>
       reactorResourceFactory.afterPropertiesSet();
 
       springContext = createSpringBuilder().run(commandLineArgs());
+
+      LOGGER.info("Started TestSpringApplication ...");
+      LOGGER.info("-> Server / Rest Port: {}", restPort());
+      LOGGER.info("-> Monitoring Port: {}", monitoringPort());
+      LOGGER.info("-> Additional Profiles: {}", additionalProfiles);
+      LOGGER.info("-> Secondary Database Type: {}", databaseType());
     }
 
     return self();
@@ -160,6 +173,27 @@ public abstract class TestSpringApplication<T extends TestSpringApplication<T>>
     return self();
   }
 
+  public T withAuthenticationMethod(final AuthenticationMethod authenticationMethod) {
+    return withAdditionalProfile(Profile.CONSOLIDATED_AUTH)
+        .withProperty(AuthenticationProperties.METHOD, authenticationMethod.name());
+  }
+
+  protected T withUnauthenticatedAccess(final boolean allowUnauthenticatedAccess) {
+    if (allowUnauthenticatedAccess) {
+      withAuthenticationMethod(AuthenticationMethod.BASIC);
+    }
+    return withProperty(
+        AuthenticationProperties.API_UNPROTECTED, String.valueOf(allowUnauthenticatedAccess));
+  }
+
+  public final T withUnauthenticatedAccess() {
+    return withUnauthenticatedAccess(true);
+  }
+
+  public final T withAuthenticatedAccess() {
+    return withUnauthenticatedAccess(false);
+  }
+
   /** Returns the command line arguments that will be passed when the application is started. */
   protected String[] commandLineArgs() {
     return new String[0];
@@ -187,6 +221,10 @@ public abstract class TestSpringApplication<T extends TestSpringApplication<T>>
     if (!propertyOverrides.containsKey(key)) {
       propertyOverrides.put(key, value);
     }
+  }
+
+  private String databaseType() {
+    return property("camunda.database.type", String.class, "es");
   }
 
   private int monitoringPort() {

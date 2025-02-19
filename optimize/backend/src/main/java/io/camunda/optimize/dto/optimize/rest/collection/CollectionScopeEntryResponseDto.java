@@ -13,9 +13,7 @@ import io.camunda.optimize.dto.optimize.query.collection.CollectionScopeEntryDto
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
-import lombok.Data;
 
-@Data
 public class CollectionScopeEntryResponseDto {
 
   private String id;
@@ -23,6 +21,8 @@ public class CollectionScopeEntryResponseDto {
   private String definitionKey;
   private String definitionName;
   private List<TenantDto> tenants = new ArrayList<>();
+
+  public CollectionScopeEntryResponseDto() {}
 
   public String getDefinitionName() {
     return definitionName == null ? definitionKey : definitionName;
@@ -41,5 +41,67 @@ public class CollectionScopeEntryResponseDto {
     collectionScopeEntryResponseDto.setDefinitionType(scope.getDefinitionType());
     collectionScopeEntryResponseDto.setTenants(authorizedTenantDtos);
     return collectionScopeEntryResponseDto;
+  }
+
+  public String getId() {
+    return this.id;
+  }
+
+  public DefinitionType getDefinitionType() {
+    return this.definitionType;
+  }
+
+  public String getDefinitionKey() {
+    return this.definitionKey;
+  }
+
+  public List<TenantDto> getTenants() {
+    return this.tenants;
+  }
+
+  public void setId(final String id) {
+    this.id = id;
+  }
+
+  public void setDefinitionType(final DefinitionType definitionType) {
+    this.definitionType = definitionType;
+  }
+
+  public void setDefinitionKey(final String definitionKey) {
+    this.definitionKey = definitionKey;
+  }
+
+  public void setDefinitionName(final String definitionName) {
+    this.definitionName = definitionName;
+  }
+
+  public void setTenants(final List<TenantDto> tenants) {
+    this.tenants = tenants;
+  }
+
+  public boolean equals(final Object o) {
+    return org.apache.commons.lang3.builder.EqualsBuilder.reflectionEquals(this, o);
+  }
+
+  protected boolean canEqual(final Object other) {
+    return other instanceof CollectionScopeEntryResponseDto;
+  }
+
+  public int hashCode() {
+    return org.apache.commons.lang3.builder.HashCodeBuilder.reflectionHashCode(this);
+  }
+
+  public String toString() {
+    return "CollectionScopeEntryResponseDto(id="
+        + this.getId()
+        + ", definitionType="
+        + this.getDefinitionType()
+        + ", definitionKey="
+        + this.getDefinitionKey()
+        + ", definitionName="
+        + this.getDefinitionName()
+        + ", tenants="
+        + this.getTenants()
+        + ")";
   }
 }

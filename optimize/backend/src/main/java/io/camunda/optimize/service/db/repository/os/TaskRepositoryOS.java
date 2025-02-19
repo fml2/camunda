@@ -18,21 +18,24 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import lombok.AllArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.opensearch.client.opensearch._types.ErrorCause;
 import org.opensearch.client.opensearch.tasks.GetTasksResponse;
 import org.opensearch.client.opensearch.tasks.Info;
 import org.opensearch.client.opensearch.tasks.Status;
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@AllArgsConstructor
 @Conditional(OpenSearchCondition.class)
 public class TaskRepositoryOS extends TaskRepository {
+
+  private static final Logger LOG = org.slf4j.LoggerFactory.getLogger(TaskRepositoryOS.class);
   private final OptimizeOpenSearchClient osClient;
+
+  public TaskRepositoryOS(final OptimizeOpenSearchClient osClient) {
+    this.osClient = osClient;
+  }
 
   @Override
   public List<TaskProgressInfo> tasksProgress(final String action) {
@@ -51,11 +54,11 @@ public class TaskRepositoryOS extends TaskRepository {
         .toList();
   }
 
-  private static long getProcessedTasksCount(Status status) {
+  private static long getProcessedTasksCount(final Status status) {
     return status.deleted() + status.created() + status.updated();
   }
 
-  private static int getProgress(Status status) {
+  private static int getProgress(final Status status) {
     return status.total() > 0
         ? Double.valueOf((double) getProcessedTasksCount(status) / status.total() * 100.0D)
             .intValue()
@@ -71,9 +74,9 @@ public class TaskRepositoryOS extends TaskRepository {
 
   private TaskResponse createTaskResponseFromGetTasksResponse(
       final GetTasksResponse getTasksResponse) {
-    boolean completed = getTasksResponse.completed();
+    final boolean completed = getTasksResponse.completed();
 
-    Info taskInfo = getTasksResponse.task();
+    final Info taskInfo = getTasksResponse.task();
     TaskResponse.Status status = null;
     if (taskInfo.status() != null) {
       status =
@@ -87,7 +90,7 @@ public class TaskRepositoryOS extends TaskRepository {
     final Task task = new TaskResponse.Task(String.valueOf(taskInfo.id()), status);
     TaskResponse.Error error = null;
     if (getTasksResponse.error() != null) {
-      List<String> stackTrace =
+      final List<String> stackTrace =
           getTasksResponse.error().stackTrace() != null
               ? List.of(getTasksResponse.error().stackTrace())
               : Collections.emptyList();

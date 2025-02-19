@@ -12,10 +12,10 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
-import io.camunda.search.security.auth.Authentication;
+import io.camunda.security.auth.Authentication;
+import io.camunda.security.configuration.MultiTenancyConfiguration;
 import io.camunda.service.SignalServices;
 import io.camunda.zeebe.broker.client.api.dto.BrokerResponse;
-import io.camunda.zeebe.gateway.impl.configuration.MultiTenancyCfg;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
 import io.camunda.zeebe.protocol.impl.record.value.signal.SignalRecord;
 import io.camunda.zeebe.protocol.record.value.TenantOwned;
@@ -37,11 +37,11 @@ public class SignalControllerTest extends RestControllerTest {
   private static final String EXPECTED_PUBLICATION_RESPONSE =
       """
           {
-            "signalKey": 123,
+            "signalKey": "123",
             "tenantId": "tenantId"
           }""";
 
-  @MockBean MultiTenancyCfg multiTenancyCfg;
+  @MockBean MultiTenancyConfiguration multiTenancyCfg;
   @MockBean SignalServices signalServices;
 
   @BeforeEach

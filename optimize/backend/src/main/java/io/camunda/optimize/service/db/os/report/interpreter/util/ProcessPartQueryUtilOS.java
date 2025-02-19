@@ -8,9 +8,9 @@
 package io.camunda.optimize.service.db.os.report.interpreter.util;
 
 import static io.camunda.optimize.dto.optimize.ReportConstants.NO_DATA_AVAILABLE_RESULT;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.nested;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.script;
-import static io.camunda.optimize.service.db.os.externalcode.client.dsl.QueryDSL.term;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.nested;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.script;
+import static io.camunda.optimize.service.db.os.client.dsl.QueryDSL.term;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_END_DATE;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_ID;
 import static io.camunda.optimize.service.db.schema.index.ProcessInstanceIndex.FLOW_NODE_INSTANCES;
@@ -25,8 +25,6 @@ import io.camunda.optimize.util.types.MapUtil;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.text.StringSubstitutor;
 import org.opensearch.client.json.JsonData;
@@ -39,8 +37,10 @@ import org.opensearch.client.opensearch._types.aggregations.ScriptedMetricAggreg
 import org.opensearch.client.opensearch._types.query_dsl.BoolQuery;
 import org.opensearch.client.opensearch._types.query_dsl.ChildScoreMode;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class ProcessPartQueryUtilOS extends AbstractProcessPartQueryUtil {
+public final class ProcessPartQueryUtilOS extends AbstractProcessPartQueryUtil {
+
+  private ProcessPartQueryUtilOS() {}
+
   public static Double getProcessPartAggregationResult(
       final Map<String, Aggregate> aggs, final AggregationDto aggregationType) {
     final NestedAggregate nested = aggs.get(NESTED_AGGREGATION).nested();
@@ -48,7 +48,7 @@ public class ProcessPartQueryUtilOS extends AbstractProcessPartQueryUtil {
         nested.aggregations().get(getScriptAggregationName(aggregationType)).scriptedMetric();
     try {
       return scriptedMetric.value().to(Double.class);
-    } catch (IllegalStateException i) {
+    } catch (final IllegalStateException i) {
       return NO_DATA_AVAILABLE_RESULT;
     }
   }
@@ -99,7 +99,7 @@ public class ProcessPartQueryUtilOS extends AbstractProcessPartQueryUtil {
                     Pair.of(getScriptAggregationName(aggDto), buildScriptedMetricAgg.apply(aggDto)))
             .collect(MapUtil.pairCollector());
 
-    Aggregation nestedFlowNodeAggregation =
+    final Aggregation nestedFlowNodeAggregation =
         new Aggregation.Builder()
             .nested(n -> n.path(ProcessInstanceIndex.FLOW_NODE_INSTANCES))
             .aggregations(aggregations)

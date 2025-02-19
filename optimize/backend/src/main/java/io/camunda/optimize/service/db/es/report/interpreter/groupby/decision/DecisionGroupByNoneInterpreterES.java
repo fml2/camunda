@@ -27,17 +27,22 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class DecisionGroupByNoneInterpreterES extends AbstractDecisionGroupByInterpreterES {
-  @Getter private final DecisionDistributedByNoneInterpreterES distributedByInterpreter;
-  @Getter private final DecisionViewInterpreterFacadeES viewInterpreter;
+
+  private final DecisionDistributedByNoneInterpreterES distributedByInterpreter;
+  private final DecisionViewInterpreterFacadeES viewInterpreter;
+
+  public DecisionGroupByNoneInterpreterES(
+      final DecisionDistributedByNoneInterpreterES distributedByInterpreter,
+      final DecisionViewInterpreterFacadeES viewInterpreter) {
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Map<String, Aggregation.Builder.ContainerBuilder> createAggregation(
@@ -56,12 +61,20 @@ public class DecisionGroupByNoneInterpreterES extends AbstractDecisionGroupByInt
       final ExecutionContext<DecisionReportDataDto, DecisionExecutionPlan> context) {
     final List<DistributedByResult> distributions =
         distributedByInterpreter.retrieveResult(response, response.aggregations(), context);
-    GroupByResult groupByResult = GroupByResult.createGroupByNone(distributions);
+    final GroupByResult groupByResult = GroupByResult.createGroupByNone(distributions);
     compositeCommandResult.setGroup(groupByResult);
   }
 
   @Override
   public Set<DecisionGroupBy> getSupportedGroupBys() {
     return Set.of(DECISION_GROUP_BY_NONE);
+  }
+
+  public DecisionDistributedByNoneInterpreterES getDistributedByInterpreter() {
+    return this.distributedByInterpreter;
+  }
+
+  public DecisionViewInterpreterFacadeES getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }

@@ -7,11 +7,13 @@
  */
 package io.camunda.webapps.schema.descriptors.operate.template;
 
-import io.camunda.webapps.schema.descriptors.backup.Prio3Backup;
+import io.camunda.webapps.schema.descriptors.backup.Prio4Backup;
+import io.camunda.webapps.schema.descriptors.operate.OperateTemplateDescriptor;
 import io.camunda.webapps.schema.descriptors.operate.ProcessInstanceDependant;
+import java.util.Optional;
 
-public class IncidentTemplate extends AbstractTemplateDescriptor
-    implements ProcessInstanceDependant, Prio3Backup {
+public class IncidentTemplate extends OperateTemplateDescriptor
+    implements ProcessInstanceDependant, Prio4Backup {
 
   public static final String INDEX_NAME = "incident";
 
@@ -37,6 +39,11 @@ public class IncidentTemplate extends AbstractTemplateDescriptor
   @Override
   public String getIndexName() {
     return INDEX_NAME;
+  }
+
+  @Override
+  public Optional<String> getTenantIdField() {
+    return Optional.of(TENANT_ID);
   }
 
   @Override

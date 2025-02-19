@@ -15,18 +15,19 @@ import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
 import io.camunda.optimize.dto.optimize.index.ImportIndexDto;
 import io.camunda.optimize.dto.optimize.index.TimestampBasedImportIndexDto;
 import io.camunda.optimize.service.db.schema.DefaultIndexMappingCreator;
+import io.camunda.webapps.schema.descriptors.backup.Prio1Backup;
 
 public abstract class TimestampBasedImportIndex<TBuilder>
-    extends DefaultIndexMappingCreator<TBuilder> {
+    extends DefaultIndexMappingCreator<TBuilder> implements Prio1Backup {
 
   public static final int VERSION = 5;
 
-  private static final String LAST_IMPORT_EXECUTION_TIMESTAMP =
-      ImportIndexDto.Fields.lastImportExecutionTimestamp;
   public static final String TIMESTAMP_OF_LAST_ENTITY = ImportIndexDto.Fields.timestampOfLastEntity;
   public static final String DB_TYPE_INDEX_REFERS_TO =
-      TimestampBasedImportIndexDto.Fields.esTypeIndexRefersTo;
+      TimestampBasedImportIndexDto.Fields.dbTypeIndexRefersTo;
   public static final String DATA_SOURCE = ImportIndexDto.Fields.dataSource;
+  private static final String LAST_IMPORT_EXECUTION_TIMESTAMP =
+      ImportIndexDto.Fields.lastImportExecutionTimestamp;
 
   @Override
   public String getIndexName() {
@@ -34,13 +35,13 @@ public abstract class TimestampBasedImportIndex<TBuilder>
   }
 
   @Override
-  public int getVersion() {
-    return VERSION;
+  public boolean isImportIndex() {
+    return true;
   }
 
   @Override
-  public boolean isImportIndex() {
-    return true;
+  public int getVersion() {
+    return VERSION;
   }
 
   @Override

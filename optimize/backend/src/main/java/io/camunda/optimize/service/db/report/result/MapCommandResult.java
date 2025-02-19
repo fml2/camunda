@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.optimize.service.db.es.report.result;
+package io.camunda.optimize.service.db.report.result;
 
 import io.camunda.optimize.dto.optimize.query.report.CommandEvaluationResult;
 import io.camunda.optimize.dto.optimize.query.report.single.SingleReportDataDto;
@@ -16,14 +16,19 @@ import io.camunda.optimize.dto.optimize.query.report.single.result.hyper.MapResu
 import io.camunda.optimize.service.export.CSVUtils;
 import java.time.ZoneId;
 import java.util.List;
-import lombok.NonNull;
 
 public class MapCommandResult extends CommandEvaluationResult<List<MapResultEntryDto>> {
 
   public MapCommandResult(
-      @NonNull final List<MeasureDto<List<MapResultEntryDto>>> measures,
-      @NonNull final SingleReportDataDto reportDataDto) {
+      final List<MeasureDto<List<MapResultEntryDto>>> measures,
+      final SingleReportDataDto reportDataDto) {
     super(measures, reportDataDto);
+    if (measures == null) {
+      throw new IllegalArgumentException("measures cannot be null");
+    }
+    if (reportDataDto == null) {
+      throw new IllegalArgumentException("reportDataDto cannot be null");
+    }
   }
 
   @Override

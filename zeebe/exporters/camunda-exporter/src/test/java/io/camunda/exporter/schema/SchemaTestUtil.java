@@ -13,7 +13,8 @@ import static org.mockito.Mockito.when;
 
 import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import io.camunda.exporter.utils.TestObjectMapper;
 import io.camunda.webapps.schema.descriptors.IndexDescriptor;
 import io.camunda.webapps.schema.descriptors.IndexTemplateDescriptor;
 import java.io.IOException;
@@ -21,8 +22,6 @@ import java.util.List;
 import java.util.Map;
 
 public final class SchemaTestUtil {
-
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private SchemaTestUtil() {}
 
@@ -62,18 +61,47 @@ public final class SchemaTestUtil {
   @SuppressWarnings("unchecked")
   public static void validateMappings(final TypeMapping mapping, final String fileName)
       throws IOException {
+    final var propertiesMap = getFileProperties(fileName);
+
+    assertThat(mapping.properties().size()).isEqualTo(propertiesMap.size());
+    propertiesMap.forEach(
+        (key, value) ->
+            assertThat(mapping.properties().get(key)._kind().jsonValue())
+                .isEqualTo(value.get("type")));
+  }
+
+  public static void validateMappings(
+      final org.opensearch.client.opensearch._types.mapping.TypeMapping mapping,
+      final String fileName)
+      throws IOException {
+
+    final var propertiesMap = getFileProperties(fileName);
+
+    assertThat(mapping.properties().size()).isEqualTo(propertiesMap.size());
+    propertiesMap.forEach(
+        (key, value) ->
+            assertThat(mapping.properties().get(key)._kind().jsonValue())
+                .isEqualTo(value.get("type")));
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Map<String, Object>> getFileProperties(final String fileName)
+      throws IOException {
     try (final var expectedMappings = SchemaTestUtil.class.getResourceAsStream(fileName)) {
       final var jsonMap =
-          MAPPER.readValue(
-              expectedMappings, new TypeReference<Map<String, Map<String, Object>>>() {});
-      final var propertiesMap =
-          (Map<String, Map<String, Object>>) jsonMap.get("mappings").get("properties");
+          TestObjectMapper.objectMapper()
+              .readValue(
+                  expectedMappings, new TypeReference<Map<String, Map<String, Object>>>() {});
+      return (Map<String, Map<String, Object>>) jsonMap.get("mappings").get("properties");
+    }
+  }
 
-      assertThat(mapping.properties().size()).isEqualTo(propertiesMap.size());
-      propertiesMap.forEach(
-          (key, value) ->
-              assertThat(mapping.properties().get(key)._kind().jsonValue())
-                  .isEqualTo(value.get("type")));
+  public static boolean mappingsMatch(final JsonNode mappings, final String fileName)
+      throws IOException {
+    try (final var expectedMappingsJson = SchemaTestUtil.class.getResourceAsStream(fileName)) {
+      final var expectedMappingsTree =
+          TestObjectMapper.objectMapper().readTree(expectedMappingsJson);
+      return mappings.equals(expectedMappingsTree.get("mappings"));
     }
   }
 }

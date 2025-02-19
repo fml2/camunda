@@ -41,21 +41,32 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Conditional(ElasticSearchCondition.class)
 public class ProcessGroupByProcessInstanceRunningDateInterpreterES
     extends AbstractProcessGroupByInterpreterES {
+
   private final DateTimeFormatter formatter;
   private final DateAggregationServiceES dateAggregationService;
   private final MinMaxStatsServiceES minMaxStatsService;
-  @Getter private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
-  @Getter private final ProcessViewInterpreterFacadeES viewInterpreter;
+  private final ProcessDistributedByInterpreterFacadeES distributedByInterpreter;
+  private final ProcessViewInterpreterFacadeES viewInterpreter;
+
+  public ProcessGroupByProcessInstanceRunningDateInterpreterES(
+      final DateTimeFormatter formatter,
+      final DateAggregationServiceES dateAggregationService,
+      final MinMaxStatsServiceES minMaxStatsService,
+      final ProcessDistributedByInterpreterFacadeES distributedByInterpreter,
+      final ProcessViewInterpreterFacadeES viewInterpreter) {
+    this.formatter = formatter;
+    this.dateAggregationService = dateAggregationService;
+    this.minMaxStatsService = minMaxStatsService;
+    this.distributedByInterpreter = distributedByInterpreter;
+    this.viewInterpreter = viewInterpreter;
+  }
 
   @Override
   public Set<ProcessGroupBy> getSupportedGroupBys() {
@@ -118,17 +129,25 @@ public class ProcessGroupByProcessInstanceRunningDateInterpreterES
       final ResponseBody<?> response,
       final Map<String, Aggregate> aggregations,
       final ExecutionContext<ProcessReportDataDto, ProcessExecutionPlan> context) {
-    FiltersAggregate agg = aggregations.get(FILTER_LIMITED_AGGREGATION).filters();
+    final FiltersAggregate agg = aggregations.get(FILTER_LIMITED_AGGREGATION).filters();
 
-    List<CompositeCommandResult.GroupByResult> results = new ArrayList<>();
+    final List<CompositeCommandResult.GroupByResult> results = new ArrayList<>();
 
-    for (Map.Entry<String, FiltersBucket> entry : agg.buckets().keyed().entrySet()) {
-      String key = formatToCorrectTimezone(entry.getKey(), context.getTimezone(), formatter);
+    for (final Map.Entry<String, FiltersBucket> entry : agg.buckets().keyed().entrySet()) {
+      final String key = formatToCorrectTimezone(entry.getKey(), context.getTimezone(), formatter);
       final List<CompositeCommandResult.DistributedByResult> distributions =
           getDistributedByInterpreter()
               .retrieveResult(response, entry.getValue().aggregations(), context);
       results.add(CompositeCommandResult.GroupByResult.createGroupByResult(key, distributions));
     }
     return results;
+  }
+
+  public ProcessDistributedByInterpreterFacadeES getDistributedByInterpreter() {
+    return this.distributedByInterpreter;
+  }
+
+  public ProcessViewInterpreterFacadeES getViewInterpreter() {
+    return this.viewInterpreter;
   }
 }
