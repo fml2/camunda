@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.db.rdbms.write.RdbmsWriterConfig;
 import io.camunda.db.rdbms.write.RdbmsWriterMetrics;
+import io.camunda.db.rdbms.write.RdbmsWriters;
 import io.camunda.search.entities.BatchOperationType;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -43,6 +44,7 @@ class HistoryCleanupServiceTest {
   private CorrelatedMessageSubscriptionWriter correlatedMessageSubscriptionWriter;
   private UsageMetricWriter usageMetricWriter;
   private UsageMetricTUWriter usageMetricTUWriter;
+  private AuditLogWriter auditLogWriter;
 
   private HistoryCleanupService historyCleanupService;
 
@@ -62,6 +64,7 @@ class HistoryCleanupServiceTest {
     correlatedMessageSubscriptionWriter = mock(CorrelatedMessageSubscriptionWriter.class);
     usageMetricWriter = mock(UsageMetricWriter.class);
     usageMetricTUWriter = mock(UsageMetricTUWriter.class);
+    auditLogWriter = mock(AuditLogWriter.class);
 
     when(processInstanceWriter.cleanupHistory(anyInt(), any(), anyInt())).thenReturn(0);
     when(flowNodeInstanceWriter.cleanupHistory(anyInt(), any(), anyInt())).thenReturn(0);
@@ -78,6 +81,7 @@ class HistoryCleanupServiceTest {
         .thenReturn(0);
     when(usageMetricWriter.cleanupMetrics(anyInt(), any(), anyInt())).thenReturn(0);
     when(usageMetricTUWriter.cleanupMetrics(anyInt(), any(), anyInt())).thenReturn(0);
+    when(auditLogWriter.cleanupHistory(anyInt(), any(), anyInt())).thenReturn(0);
 
     final var historyConfig = mock(RdbmsWriterConfig.HistoryConfig.class);
     when(config.history()).thenReturn(historyConfig);
@@ -95,23 +99,26 @@ class HistoryCleanupServiceTest {
     when(historyConfig.usageMetricsCleanup()).thenReturn(Duration.ofDays(1));
     when(historyConfig.usageMetricsTTL()).thenReturn(Duration.ofDays(730));
 
-    historyCleanupService =
-        new HistoryCleanupService(
-            config,
-            processInstanceWriter,
-            incidentWriter,
-            flowNodeInstanceWriter,
-            userTaskWriter,
-            variableInstanceWriter,
-            decisionInstanceWriter,
-            jobWriter,
-            sequenceFlowWriter,
-            batchOperationWriter,
-            messageSubscriptionWriter,
-            correlatedMessageSubscriptionWriter,
-            mock(RdbmsWriterMetrics.class, Mockito.RETURNS_DEEP_STUBS),
-            usageMetricWriter,
-            usageMetricTUWriter);
+    final var rdbmsWriters = mock(RdbmsWriters.class);
+    when(rdbmsWriters.getProcessInstanceWriter()).thenReturn(processInstanceWriter);
+    when(rdbmsWriters.getIncidentWriter()).thenReturn(incidentWriter);
+    when(rdbmsWriters.getFlowNodeInstanceWriter()).thenReturn(flowNodeInstanceWriter);
+    when(rdbmsWriters.getUserTaskWriter()).thenReturn(userTaskWriter);
+    when(rdbmsWriters.getVariableWriter()).thenReturn(variableInstanceWriter);
+    when(rdbmsWriters.getDecisionInstanceWriter()).thenReturn(decisionInstanceWriter);
+    when(rdbmsWriters.getJobWriter()).thenReturn(jobWriter);
+    when(rdbmsWriters.getSequenceFlowWriter()).thenReturn(sequenceFlowWriter);
+    when(rdbmsWriters.getBatchOperationWriter()).thenReturn(batchOperationWriter);
+    when(rdbmsWriters.getMessageSubscriptionWriter()).thenReturn(messageSubscriptionWriter);
+    when(rdbmsWriters.getCorrelatedMessageSubscriptionWriter())
+        .thenReturn(correlatedMessageSubscriptionWriter);
+    when(rdbmsWriters.getUsageMetricWriter()).thenReturn(usageMetricWriter);
+    when(rdbmsWriters.getUsageMetricTUWriter()).thenReturn(usageMetricTUWriter);
+    when(rdbmsWriters.getMetrics())
+        .thenReturn(mock(RdbmsWriterMetrics.class, Mockito.RETURNS_DEEP_STUBS));
+    when(rdbmsWriters.getAuditLogWriter()).thenReturn(auditLogWriter);
+
+    historyCleanupService = new HistoryCleanupService(config, rdbmsWriters);
   }
 
   @Test
@@ -130,6 +137,7 @@ class HistoryCleanupServiceTest {
     when(messageSubscriptionWriter.cleanupHistory(anyInt(), any(), anyInt())).thenReturn(1);
     when(correlatedMessageSubscriptionWriter.cleanupHistory(anyInt(), any(), anyInt()))
         .thenReturn(1);
+    when(auditLogWriter.cleanupHistory(anyInt(), any(), anyInt())).thenReturn(1);
 
     // when
     final Duration nextCleanupInterval =
@@ -149,6 +157,7 @@ class HistoryCleanupServiceTest {
     verify(batchOperationWriter).cleanupHistory(CLEANUP_DATE, 100);
     verify(messageSubscriptionWriter).cleanupHistory(PARTITION_ID, CLEANUP_DATE, 100);
     verify(correlatedMessageSubscriptionWriter).cleanupHistory(PARTITION_ID, CLEANUP_DATE, 100);
+    verify(auditLogWriter).cleanupHistory(PARTITION_ID, CLEANUP_DATE, 100);
   }
 
   @Test
@@ -184,6 +193,7 @@ class HistoryCleanupServiceTest {
     numDeletedRecords.put("batchOperation", 0);
     numDeletedRecords.put("messageSubscription", 0);
     numDeletedRecords.put("correlatedMessageSubscription", 0);
+    numDeletedRecords.put("auditLog", 0);
 
     // when
     final Duration nextDuration =
@@ -210,6 +220,7 @@ class HistoryCleanupServiceTest {
     numDeletedRecords.put("batchOperation", 100);
     numDeletedRecords.put("messageSubscription", 100);
     numDeletedRecords.put("correlatedMessageSubscription", 100);
+    numDeletedRecords.put("auditLog", 100);
 
     // when
     final Duration nextDuration =
@@ -235,6 +246,7 @@ class HistoryCleanupServiceTest {
     numDeletedRecords.put("batchOperation", 50);
     numDeletedRecords.put("messageSubscription", 50);
     numDeletedRecords.put("correlatedMessageSubscription", 50);
+    numDeletedRecords.put("auditLog", 50);
 
     // when
     final Duration nextDuration =
@@ -243,6 +255,32 @@ class HistoryCleanupServiceTest {
     // then
     assertThat(nextDuration)
         .isEqualTo(Duration.ofHours(4)); // assuming minCleanupInterval is 1 hour
+  }
+
+  @Test
+  void testCalculateNewDurationWhenLowCleanup() {
+    // given
+    final var numDeletedRecords = new java.util.HashMap<String, Integer>();
+    numDeletedRecords.put("processInstance", 20);
+    numDeletedRecords.put("flowNodeInstance", 20);
+    numDeletedRecords.put("incident", 20);
+    numDeletedRecords.put("userTask", 20);
+    numDeletedRecords.put("variable", 20);
+    numDeletedRecords.put("decisionInstance", 20);
+    numDeletedRecords.put("job", 20);
+    numDeletedRecords.put("sequenceFlow", 20);
+    numDeletedRecords.put("batchOperation", 20);
+    numDeletedRecords.put("messageSubscription", 20);
+    numDeletedRecords.put("correlatedMessageSubscription", 20);
+    numDeletedRecords.put("auditLog", 20);
+
+    // when
+    final Duration nextDuration =
+        historyCleanupService.calculateNewDuration(Duration.ofHours(4), numDeletedRecords);
+
+    // then
+    assertThat(nextDuration)
+        .isEqualTo(Duration.ofHours(8)); // assuming minCleanupInterval is 1 hour
   }
 
   @Test

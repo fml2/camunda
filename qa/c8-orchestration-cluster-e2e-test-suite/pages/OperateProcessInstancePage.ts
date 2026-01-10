@@ -22,6 +22,7 @@ class OperateProcessInstancePage {
   readonly statusVariable: Locator;
   readonly instanceHeader: Locator;
   readonly instanceHistory: Locator;
+  readonly rootProcessNode: Locator;
   readonly incidentsTable: Locator;
   readonly incidentsTableOperationSpinner: Locator;
   readonly incidentsTableRows: Locator;
@@ -61,6 +62,19 @@ class OperateProcessInstancePage {
   readonly executionCountToggleButton: Locator;
   readonly endDateField: Locator;
   readonly incidentsViewHeader: Locator;
+  readonly modificationModeText: Locator;
+  readonly lastAddedModificationText: Locator;
+  readonly undoModificationButton: Locator;
+  readonly deleteVariableModificationButton: Locator;
+  readonly cancelButton: Locator;
+  readonly addVariableModificationButton: Locator;
+  readonly modalDialog: Locator;
+  readonly noVariablesText: Locator;
+  readonly variableCellByName: (name: string | RegExp) => Locator;
+  readonly viewAllChildProcessesLink: Locator;
+  readonly instanceHeaderSkeleton: Locator;
+  readonly viewAllCalledInstancesLink: Locator;
+  readonly viewParentInstanceLink: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -86,6 +100,9 @@ class OperateProcessInstancePage {
     this.variableValueInput = page.getByTestId('edit-variable-value');
     this.instanceHeader = page.getByTestId('instance-header');
     this.instanceHistory = page.getByTestId('instance-history');
+    this.rootProcessNode = this.instanceHistory
+      .locator('[data-testid^="node-details-"]')
+      .first();
     this.incidentsTable = page.getByTestId('data-list');
     this.incidentsTableOperationSpinner =
       this.incidentsTable.getByTestId('operation-spinner');
@@ -149,6 +166,33 @@ class OperateProcessInstancePage {
     );
     this.endDateField = this.instanceHeader.getByTestId('end-date');
     this.incidentsViewHeader = page.getByText(/incidents\s+-\s+/i);
+    this.modificationModeText = page.getByText(
+      'Process Instance Modification Mode',
+    );
+    this.lastAddedModificationText = page.getByText('Last added modification:');
+    this.undoModificationButton = page.getByRole('button', {name: 'undo'});
+    this.deleteVariableModificationButton = page.getByRole('button', {
+      name: /delete variable modification/i,
+    });
+    this.cancelButton = page.getByRole('button', {name: 'Cancel'});
+    this.addVariableModificationButton = page.getByRole('button', {
+      name: /add variable/i,
+    });
+    this.modalDialog = page.getByRole('dialog');
+    this.noVariablesText = page.getByText(/The Flow Node has no Variables/i);
+
+    this.variableCellByName = (name) =>
+      this.variablesList.getByRole('cell', {name});
+    this.viewAllChildProcessesLink = this.instanceHeader.getByRole('link', {
+      name: 'View all',
+    });
+    this.instanceHeaderSkeleton = page.getByTestId('instance-header-skeleton');
+    this.viewAllCalledInstancesLink = page.getByRole('link', {
+      name: /view all called instances/i,
+    });
+    this.viewParentInstanceLink = page.getByRole('link', {
+      name: /view parent instance/i,
+    });
   }
 
   async connectorResultVariableName(name: string): Promise<Locator> {
@@ -209,6 +253,10 @@ class OperateProcessInstancePage {
       .getByTestId('new-variable-value');
   };
 
+  getVariableTestId(variableName: string) {
+    return this.page.getByTestId(`variable-${variableName}`);
+  }
+
   getListenerTypeFilterOption = (
     option: 'Execution listeners' | 'User task listeners' | 'All listeners',
   ) => {
@@ -224,11 +272,101 @@ class OperateProcessInstancePage {
   }
 
   async undoModification() {
-    await this.page
-      .getByRole('button', {
-        name: 'undo',
-      })
-      .click();
+    await this.undoModificationButton.click();
+  }
+
+  async enterModificationMode() {
+    await this.modifyInstanceButton.click();
+  }
+
+  async clickApplyModifications() {
+    await this.applyModificationsButton.click();
+  }
+
+  async clickAddVariable() {
+    await this.addVariableModificationButton.click();
+  }
+
+  async clickDeleteVariableModification() {
+    await this.deleteVariableModificationButton.click();
+  }
+
+  async clickCancel() {
+    await this.cancelButton.click();
+  }
+
+  getEditVariableModificationText(variableName: string) {
+    return this.page.getByText(
+      new RegExp(`edit variable "${variableName}"`, 'i'),
+    );
+  }
+
+  getAddVariableModificationText(variableName: string) {
+    return this.page.getByText(
+      new RegExp(`add new variable "${variableName}"`, 'i'),
+    );
+  }
+
+  getVariableModificationSummaryText(variableName: string, value: string) {
+    return this.page.getByText(`${variableName}: ${value}`);
+  }
+
+  getDialogVariableModificationSummaryText(
+    variableName: string,
+    value: string,
+  ) {
+    return this.modalDialog.getByText(`${variableName}: ${value}`);
+  }
+
+  getDialogDeleteVariableModificationButton(index?: number) {
+    const button = this.modalDialog.getByRole('button', {
+      name: 'Delete variable modification',
+    });
+    return index !== undefined ? button.nth(index) : button;
+  }
+
+  getDialogCancelButton() {
+    return this.modalDialog.getByRole('button', {name: 'Cancel'});
+  }
+
+  async clickDialogDeleteVariableModification(index?: number) {
+    await this.getDialogDeleteVariableModificationButton(index).click();
+  }
+
+  async clickDialogCancel() {
+    await this.getDialogCancelButton().click();
+  }
+
+  async clickFlowNode(flowNodeName: string) {
+    await this.diagram.getByText(flowNodeName).first().click({timeout: 20000});
+  }
+
+  async navigateToRootScope() {
+    await this.rootProcessNode.click();
+  }
+
+  async addNewVariableModificationMode(
+    variableIndex: string,
+    name: string,
+    value: string,
+  ) {
+    await this.addVariableModificationButton.click();
+    await expect(
+      this.page.getByTestId(`variable-${variableIndex}`),
+    ).toBeVisible();
+
+    await this.getNewVariableNameFieldSelector(variableIndex).clear();
+    await this.getNewVariableNameFieldSelector(variableIndex).type(name);
+    await this.page.keyboard.press('Tab');
+
+    await this.getNewVariableValueFieldSelector(variableIndex).type(value);
+    await this.page.keyboard.press('Tab');
+  }
+
+  async editVariableValueModificationMode(variableName: string, value: string) {
+    await this.getEditVariableFieldSelector(variableName).clear();
+    await this.getEditVariableFieldSelector(variableName).type(value);
+    await this.page.keyboard.press('Tab');
   }
 
   async navigateToProcessInstance(id: string) {
@@ -445,6 +583,10 @@ class OperateProcessInstancePage {
     return this.diagram.locator(`[data-element-id="${elementId}"]`);
   }
 
+  async clickDiagramElement(elementId: string): Promise<void> {
+    await this.getDiagramElement(elementId).click();
+  }
+
   async getDiagramElementBadge(elementId: string) {
     return this.page.$(`[data-element-id="${elementId}"] .badge`);
   }
@@ -462,6 +604,18 @@ class OperateProcessInstancePage {
     for (const elementId of elementIds) {
       await expect(this.getDiagramElement(elementId)).toBeVisible();
     }
+  }
+
+  async clickViewAllChildProcesses(): Promise<void> {
+    await this.viewAllChildProcessesLink.click();
+  }
+
+  async clickViewAllCalledInstances(): Promise<void> {
+    await this.viewAllCalledInstancesLink.click();
+  }
+
+  async clickViewParentInstance(): Promise<void> {
+    await this.viewParentInstanceLink.click();
   }
 }
 

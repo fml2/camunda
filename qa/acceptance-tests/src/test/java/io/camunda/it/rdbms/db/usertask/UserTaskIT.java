@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.db.rdbms.RdbmsService;
 import io.camunda.db.rdbms.read.service.UserTaskDbReader;
-import io.camunda.db.rdbms.write.RdbmsWriter;
+import io.camunda.db.rdbms.write.RdbmsWriters;
 import io.camunda.db.rdbms.write.domain.UserTaskDbModel;
 import io.camunda.db.rdbms.write.domain.UserTaskDbModel.UserTaskState;
 import io.camunda.db.rdbms.write.domain.VariableDbModel;
@@ -42,6 +42,7 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import org.assertj.core.data.TemporalUnitWithinOffset;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestTemplate;
@@ -87,7 +88,7 @@ public class UserTaskIT {
 
     final UserTaskDbModel updatedModel =
         userTask.toBuilder().state(UserTaskState.COMPLETED).completionDate(NOW.plusDays(2)).build();
-    final RdbmsWriter writer = rdbmsService.createWriter(1L);
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
     writer.getUserTaskWriter().update(updatedModel);
     writer.flush();
 
@@ -113,7 +114,7 @@ public class UserTaskIT {
             .dueDate(NOW.plusDays(3))
             .followUpDate(NOW.plusDays(4))
             .build();
-    final RdbmsWriter writer = rdbmsService.createWriter(1L);
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
     writer.getUserTaskWriter().update(updatedModel);
     writer.flush();
 
@@ -130,7 +131,7 @@ public class UserTaskIT {
 
     final UserTaskDbModel updatedModel =
         userTask.toBuilder().candidateGroups(null).candidateUsers(null).build();
-    final RdbmsWriter writer = rdbmsService.createWriter(1L);
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
     writer.getUserTaskWriter().update(updatedModel);
     writer.flush();
 
@@ -142,18 +143,18 @@ public class UserTaskIT {
   public void shouldUpdateCandidateUserAndGroupAndFindByKey(
       final CamundaRdbmsTestApplication testApplication) {
     final RdbmsService rdbmsService = testApplication.getRdbmsService();
-    final RdbmsWriter rdbmsWriter = rdbmsService.createWriter(1L);
+    final RdbmsWriters rdbmsWriters = rdbmsService.createWriter(1L);
 
     final UserTaskDbModel userTask = UserTaskFixtures.createRandomized();
-    createAndSaveUserTask(rdbmsWriter, userTask);
+    createAndSaveUserTask(rdbmsWriters, userTask);
 
     final UserTaskDbModel updatedModel =
         userTask.toBuilder()
             .candidateUsers(List.of("user1", "user2", "user3"))
             .candidateGroups(List.of("group1", "group2"))
             .build();
-    rdbmsWriter.getUserTaskWriter().update(updatedModel);
-    rdbmsWriter.flush();
+    rdbmsWriters.getUserTaskWriter().update(updatedModel);
+    rdbmsWriters.flush();
 
     final var instance = rdbmsService.getUserTaskReader().findOne(userTask.userTaskKey()).get();
     assertUserTaskEntity(instance, updatedModel);
@@ -489,8 +490,11 @@ public class UserTaskIT {
     createAndSaveUserTask(rdbmsService, userTask);
 
     final VariableDbModel randomizedVariable =
-        VariableFixtures.createRandomized(b -> b.processInstanceKey(userTask.processInstanceKey()));
-    final RdbmsWriter writer = rdbmsService.createWriter(1L);
+        VariableFixtures.createRandomized(
+            b ->
+                b.processInstanceKey(userTask.processInstanceKey())
+                    .name("randomVariable" + UUID.randomUUID()));
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
     writer.getVariableWriter().create(randomizedVariable);
     writer.flush();
 
@@ -516,6 +520,53 @@ public class UserTaskIT {
   }
 
   @TestTemplate
+  public void shouldFindUserTaskByTwoProcessInstanceVariableNames(
+      final CamundaRdbmsTestApplication testApplication) {
+    final RdbmsService rdbmsService = testApplication.getRdbmsService();
+
+    final UserTaskDbModel userTask = UserTaskFixtures.createRandomized();
+    createAndSaveUserTask(rdbmsService, userTask);
+
+    final VariableDbModel randomizedVariable =
+        VariableFixtures.createRandomized(
+            b ->
+                b.processInstanceKey(userTask.processInstanceKey())
+                    .name("randomVariable" + UUID.randomUUID()));
+    final VariableDbModel randomizedVariable2 =
+        VariableFixtures.createRandomized(
+            b ->
+                b.processInstanceKey(userTask.processInstanceKey())
+                    .name("randomVariable" + UUID.randomUUID()));
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
+    writer.getVariableWriter().create(randomizedVariable);
+    writer.getVariableWriter().create(randomizedVariable2);
+    writer.flush();
+
+    final var searchResult =
+        rdbmsService
+            .getUserTaskReader()
+            .search(
+                new UserTaskQuery(
+                    new UserTaskFilter.Builder()
+                        .processInstanceVariables(
+                            List.of(
+                                new VariableValueFilter.Builder()
+                                    .name(randomizedVariable.name())
+                                    .build(),
+                                new VariableValueFilter.Builder()
+                                    .name(randomizedVariable2.name())
+                                    .build()))
+                        .build(),
+                    UserTaskSort.of(b -> b),
+                    SearchQueryPage.of(b -> b.from(0).size(10))));
+
+    assertThat(searchResult).isNotNull();
+    assertThat(searchResult.total()).isEqualTo(1);
+    assertThat(searchResult.items()).hasSize(1);
+    assertUserTaskEntity(searchResult.items().getFirst(), userTask);
+  }
+
+  @TestTemplate
   public void shouldFindUserTaskByProcessInstanceVariableNameAndValue(
       final CamundaRdbmsTestApplication testApplication) {
     final RdbmsService rdbmsService = testApplication.getRdbmsService();
@@ -525,7 +576,7 @@ public class UserTaskIT {
 
     final VariableDbModel randomizedVariable =
         VariableFixtures.createRandomized(b -> b.processInstanceKey(userTask.processInstanceKey()));
-    final RdbmsWriter writer = rdbmsService.createWriter(1L);
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
     writer.getVariableWriter().create(randomizedVariable);
     writer.flush();
 
@@ -554,7 +605,7 @@ public class UserTaskIT {
   }
 
   @TestTemplate
-  public void shouldFindUserTaskByLocalVariableName(
+  public void shouldFindUserTaskByTwoProcessInstanceVariableNamesAndValues(
       final CamundaRdbmsTestApplication testApplication) {
     final RdbmsService rdbmsService = testApplication.getRdbmsService();
 
@@ -563,8 +614,61 @@ public class UserTaskIT {
 
     final VariableDbModel randomizedVariable =
         VariableFixtures.createRandomized(
-            b -> b.scopeKey(userTask.elementInstanceKey()).name("localVariable"));
-    final RdbmsWriter writer = rdbmsService.createWriter(1L);
+            b ->
+                b.processInstanceKey(userTask.processInstanceKey())
+                    .name("randomVariable" + UUID.randomUUID()));
+    final VariableDbModel randomizedVariable2 =
+        VariableFixtures.createRandomized(
+            b ->
+                b.processInstanceKey(userTask.processInstanceKey())
+                    .name("randomVariable" + UUID.randomUUID()));
+
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
+    writer.getVariableWriter().create(randomizedVariable);
+    writer.getVariableWriter().create(randomizedVariable2);
+    writer.flush();
+
+    final var searchResult =
+        rdbmsService
+            .getUserTaskReader()
+            .search(
+                new UserTaskQuery(
+                    new UserTaskFilter.Builder()
+                        .processInstanceVariables(
+                            List.of(
+                                new VariableValueFilter.Builder()
+                                    .name(randomizedVariable.name())
+                                    .valueOperation(
+                                        UntypedOperation.of(
+                                            Operation.eq(randomizedVariable.value())))
+                                    .build(),
+                                new VariableValueFilter.Builder()
+                                    .name(randomizedVariable2.name())
+                                    .valueOperation(
+                                        UntypedOperation.of(
+                                            Operation.eq(randomizedVariable2.value())))
+                                    .build()))
+                        .build(),
+                    UserTaskSort.of(b -> b),
+                    SearchQueryPage.of(b -> b.from(0).size(10))));
+
+    assertThat(searchResult).isNotNull();
+    assertThat(searchResult.total()).isEqualTo(1);
+    assertThat(searchResult.items()).hasSize(1);
+    assertUserTaskEntity(searchResult.items().getFirst(), userTask);
+  }
+
+  @TestTemplate
+  public void shouldFindUserTaskByLocalVariableName(
+      final CamundaRdbmsTestApplication testApplication) {
+    final RdbmsService rdbmsService = testApplication.getRdbmsService();
+
+    final UserTaskDbModel userTask = UserTaskFixtures.createRandomized();
+    createAndSaveUserTask(rdbmsService, userTask);
+
+    final VariableDbModel randomizedVariable =
+        VariableFixtures.createRandomized(b -> b.scopeKey(userTask.elementInstanceKey()));
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
     writer.getVariableWriter().create(randomizedVariable);
     writer.flush();
 
@@ -576,7 +680,58 @@ public class UserTaskIT {
                     new UserTaskFilter.Builder()
                         .localVariables(
                             List.of(
-                                new VariableValueFilter.Builder().name("localVariable").build()))
+                                new VariableValueFilter.Builder()
+                                    .name(randomizedVariable.name())
+                                    .build()))
+                        .build(),
+                    UserTaskSort.of(b -> b),
+                    SearchQueryPage.of(b -> b.from(0).size(10))));
+
+    assertThat(searchResult).isNotNull();
+    assertThat(searchResult.total()).isEqualTo(1);
+    assertThat(searchResult.items()).hasSize(1);
+    assertUserTaskEntity(searchResult.items().getFirst(), userTask);
+  }
+
+  @TestTemplate
+  public void shouldFindUserTaskByTwoLocalVariableNames(
+      final CamundaRdbmsTestApplication testApplication) {
+    final RdbmsService rdbmsService = testApplication.getRdbmsService();
+
+    final UserTaskDbModel userTask = UserTaskFixtures.createRandomized();
+    createAndSaveUserTask(rdbmsService, userTask);
+
+    final VariableDbModel randomizedVariable =
+        VariableFixtures.createRandomized(
+            b ->
+                b.scopeKey(userTask.elementInstanceKey())
+                    .name("localVariable" + UUID.randomUUID()));
+
+    final VariableDbModel randomizedVariable2 =
+        VariableFixtures.createRandomized(
+            b ->
+                b.scopeKey(userTask.elementInstanceKey())
+                    .name("localVariable" + UUID.randomUUID()));
+
+    final RdbmsWriters writer = rdbmsService.createWriter(1L);
+    writer.getVariableWriter().create(randomizedVariable);
+    writer.getVariableWriter().create(randomizedVariable2);
+    writer.flush();
+
+    final var searchResult =
+        rdbmsService
+            .getUserTaskReader()
+            .search(
+                new UserTaskQuery(
+                    new UserTaskFilter.Builder()
+                        .localVariables(
+                            List.of(
+                                new VariableValueFilter.Builder()
+                                    .name(randomizedVariable.name())
+                                    .build(),
+                                new VariableValueFilter.Builder()
+                                    .name(randomizedVariable2.name())
+                                    .build()))
                         .build(),
                     UserTaskSort.of(b -> b),
                     SearchQueryPage.of(b -> b.from(0).size(10))));
@@ -995,32 +1150,32 @@ public class UserTaskIT {
   @TestTemplate
   public void shouldCleanup(final CamundaRdbmsTestApplication testApplication) {
     final RdbmsService rdbmsService = testApplication.getRdbmsService();
-    final RdbmsWriter rdbmsWriter = rdbmsService.createWriter(PARTITION_ID);
+    final RdbmsWriters rdbmsWriters = rdbmsService.createWriter(PARTITION_ID);
     final UserTaskDbReader reader = rdbmsService.getUserTaskReader();
 
     final var cleanupDate = NOW.minusDays(1);
 
     final var definition =
-        ProcessDefinitionFixtures.createAndSaveProcessDefinition(rdbmsWriter, b -> b);
+        ProcessDefinitionFixtures.createAndSaveProcessDefinition(rdbmsWriters, b -> b);
     final var item1 =
         createAndSaveUserTask(
-            rdbmsWriter, b -> b.processDefinitionKey(definition.processDefinitionKey()));
+            rdbmsWriters, b -> b.processDefinitionKey(definition.processDefinitionKey()));
     final var item2 =
         createAndSaveUserTask(
-            rdbmsWriter, b -> b.processDefinitionKey(definition.processDefinitionKey()));
+            rdbmsWriters, b -> b.processDefinitionKey(definition.processDefinitionKey()));
     final var item3 =
         createAndSaveUserTask(
-            rdbmsWriter, b -> b.processDefinitionKey(definition.processDefinitionKey()));
+            rdbmsWriters, b -> b.processDefinitionKey(definition.processDefinitionKey()));
 
     // set cleanup dates
-    rdbmsWriter.getUserTaskWriter().scheduleForHistoryCleanup(item1.processInstanceKey(), NOW);
-    rdbmsWriter
+    rdbmsWriters.getUserTaskWriter().scheduleForHistoryCleanup(item1.processInstanceKey(), NOW);
+    rdbmsWriters
         .getUserTaskWriter()
         .scheduleForHistoryCleanup(item2.processInstanceKey(), NOW.minusDays(2));
-    rdbmsWriter.flush();
+    rdbmsWriters.flush();
 
     // cleanup
-    rdbmsWriter.getUserTaskWriter().cleanupHistory(PARTITION_ID, cleanupDate, 10);
+    rdbmsWriters.getUserTaskWriter().cleanupHistory(PARTITION_ID, cleanupDate, 10);
 
     final var searchResult =
         reader.search(

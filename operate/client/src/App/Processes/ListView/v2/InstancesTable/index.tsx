@@ -17,16 +17,14 @@ import {tracking} from 'modules/tracking';
 import {Link} from 'modules/components/Link';
 import {useFilters} from 'modules/hooks/useFilters';
 import type {ProcessInstance} from '@camunda/camunda-api-zod-schemas/8.8';
-
-/** Stores */
-import {processesStore} from 'modules/stores/processes/processes.list';
 import {batchModificationStore} from 'modules/stores/batchModification';
-import {Toolbar} from '../../InstancesTable/Toolbar';
+import {Toolbar} from './Toolbar';
 import {getProcessInstanceFilters} from 'modules/utils/filter/getProcessInstanceFilters';
 import {useLocation, useSearchParams} from 'react-router-dom';
-import {BatchModificationFooter} from '../../InstancesTable/BatchModificationFooter';
+import {BatchModificationFooter} from './BatchModificationFooter';
 import type {InstanceEntityState} from 'modules/types/operate';
 import {processInstancesSelectionStore} from 'modules/stores/processInstancesSelection';
+import {InstanceOperations} from './InstanceOperations';
 
 type InstancesTableProps = {
   state: 'skeleton' | 'loading' | 'error' | 'empty' | 'content';
@@ -44,9 +42,9 @@ const InstancesTable: React.FC<InstancesTableProps> = observer(
     onVerticalScrollStartReach,
     onVerticalScrollEndReach,
   }) => {
-    const hasVersionTags = processInstances.some(({processDefinitionKey}) => {
-      return processesStore.getVersionTag(processDefinitionKey);
-    });
+    const hasVersionTags = processInstances.some(
+      ({processDefinitionVersionTag}) => !!processDefinitionVersionTag,
+    );
 
     const filters = useFilters();
     const location = useLocation();
@@ -85,6 +83,7 @@ const InstancesTable: React.FC<InstancesTableProps> = observer(
         />
         <SortableTable
           state={state}
+          columnsWithNoContentPadding={['operations']}
           selectionType="checkbox"
           onSelectAll={processInstancesSelectionStore.selectAllProcessInstances}
           onSelect={(rowId) => {
@@ -106,9 +105,6 @@ const InstancesTable: React.FC<InstancesTableProps> = observer(
           onVerticalScrollStartReach={onVerticalScrollStartReach}
           onVerticalScrollEndReach={onVerticalScrollEndReach}
           rows={processInstances.map((instance) => {
-            const versionTag = processesStore.getVersionTag(
-              instance.processDefinitionKey,
-            );
             const instanceState: InstanceEntityState = instance.hasIncident
               ? 'INCIDENT'
               : instance.state;
@@ -142,10 +138,10 @@ const InstancesTable: React.FC<InstancesTableProps> = observer(
                 </Link>
               ),
               processVersion: instance.processDefinitionVersion,
-              versionTag: versionTag ?? '--',
+              versionTag: instance.processDefinitionVersionTag ?? '--',
               tenant: isTenantColumnVisible ? instance.tenantId : undefined,
               startDate: formatDate(instance.startDate),
-              endDate: instance.endDate ? formatDate(instance.endDate) : null,
+              endDate: formatDate(instance.endDate ?? null),
               parentInstanceId: (
                 <>
                   {instance.parentProcessInstanceKey ? (
@@ -168,6 +164,15 @@ const InstancesTable: React.FC<InstancesTableProps> = observer(
                     'None'
                   )}
                 </>
+              ),
+              operations: (
+                <InstanceOperations
+                  processInstanceKey={instance.processInstanceKey}
+                  isInstanceActive={
+                    instance.state === 'ACTIVE' || instance.hasIncident
+                  }
+                  hasIncident={instance.hasIncident}
+                />
               ),
             };
           })}
@@ -220,6 +225,11 @@ const InstancesTable: React.FC<InstancesTableProps> = observer(
               header: 'Parent Process Instance Key',
               key: 'parentInstanceId',
               sortKey: 'parentProcessInstanceKey',
+            },
+            {
+              header: 'Operations',
+              key: 'operations',
+              isDisabled: true,
             },
           ]}
           batchOperationId={batchOperationId}

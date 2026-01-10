@@ -213,6 +213,20 @@ public final class SearchQueryBuilders {
     return fn.apply(incidentSearchQuery()).build();
   }
 
+  public static IncidentProcessInstanceStatisticsByErrorQuery.Builder
+      incidentProcessInstanceStatisticsByErrorQuery() {
+    return new IncidentProcessInstanceStatisticsByErrorQuery.Builder();
+  }
+
+  public static IncidentProcessInstanceStatisticsByErrorQuery
+      incidentProcessInstanceStatisticsByErrorQuery(
+          final Function<
+                  IncidentProcessInstanceStatisticsByErrorQuery.Builder,
+                  ObjectBuilder<IncidentProcessInstanceStatisticsByErrorQuery>>
+              fn) {
+    return fn.apply(incidentProcessInstanceStatisticsByErrorQuery()).build();
+  }
+
   public static BatchOperationQuery.Builder batchOperationQuery() {
     return new BatchOperationQuery.Builder();
   }
@@ -270,5 +284,10 @@ public final class SearchQueryBuilders {
   public static ProcessDefinitionInstanceVersionStatisticsQuery.Builder
       processDefinitionInstanceVersionStatisticsQuery() {
     return new ProcessDefinitionInstanceVersionStatisticsQuery.Builder();
+  }
+
+  public static IncidentProcessInstanceStatisticsByDefinitionQuery.Builder
+      incidentProcessInstanceStatisticsByDefinitionQuery() {
+    return new IncidentProcessInstanceStatisticsByDefinitionQuery.Builder();
   }
 }

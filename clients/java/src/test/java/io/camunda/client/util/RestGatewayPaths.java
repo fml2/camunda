@@ -22,6 +22,8 @@ public class RestGatewayPaths {
   private static final String URL_AUTHORIZATION = REST_API_PATH + "/authorizations/%s";
   private static final String URL_AUTHORIZATIONS = REST_API_PATH + "/authorizations";
   private static final String URL_BATCH_OPERATION = REST_API_PATH + "/batch-operations/%s";
+  private static final String URL_BATCH_OPERATIONS_SEARCH =
+      REST_API_PATH + "/batch-operations/search";
   private static final String URL_CLUSTER_VARIABLES = REST_API_PATH + "/cluster-variables";
   private static final String URL_CLUSTER_VARIABLES_CREATE_GLOBAL =
       URL_CLUSTER_VARIABLES + "/global";
@@ -34,6 +36,8 @@ public class RestGatewayPaths {
   private static final String URL_CLUSTER_VARIABLES_SEARCH = URL_CLUSTER_VARIABLES + "/search";
   private static final String URL_CLOCK_PIN = REST_API_PATH + "/clock";
   private static final String URL_CLOCK_RESET = REST_API_PATH + "/clock/reset";
+  private static final String URL_CONDITIONAL_EVALUATION =
+      REST_API_PATH + "/conditionals/evaluation";
   private static final String URL_DECISION_DEFINITION = REST_API_PATH + "/decision-definitions/%s";
   private static final String URL_DECISION_EVALUATION =
       REST_API_PATH + "/decision-definitions/evaluation";
@@ -42,6 +46,7 @@ public class RestGatewayPaths {
       REST_API_PATH + "/decision-requirements/%s";
   private static final String URL_DEPLOYMENTS = REST_API_PATH + "/deployments";
   private static final String URL_ELEMENT_INSTANCE = REST_API_PATH + "/element-instances/%s";
+  private static final String URL_EXPRESSION_EVALUATION = REST_API_PATH + "/expression/evaluation";
   private static final String URL_GROUP = REST_API_PATH + "/groups/%s";
   private static final String URL_GROUPS = REST_API_PATH + "/groups";
   private static final String URL_INCIDENT = REST_API_PATH + "/incidents/%s";
@@ -57,6 +62,8 @@ public class RestGatewayPaths {
   private static final String URL_PROCESS_INSTANCE = REST_API_PATH + "/process-instances/%s";
   private static final String URL_PROCESS_INSTANCE_CANCELLATION =
       REST_API_PATH + "/process-instances/%s/cancellation";
+  private static final String URL_PROCESS_INSTANCE_DELETION =
+      REST_API_PATH + "/process-instances/%s/deletion";
   private static final String URL_PROCESS_INSTANCE_CALL_HIERARCHY =
       REST_API_PATH + "/process-instances/%s/call-hierarchy";
   private static final String URL_PROCESS_INSTANCE_SEQUENCE_FLOWS =
@@ -64,6 +71,8 @@ public class RestGatewayPaths {
   private static final String URL_PROCESS_INSTANCES = REST_API_PATH + "/process-instances";
   private static final String URL_PROCESS_INSTANCES_CANCELLATION =
       REST_API_PATH + "/process-instances/cancellation";
+  private static final String URL_PROCESS_INSTANCES_DELETION =
+      REST_API_PATH + "/process-instances/deletion";
   private static final String URL_PROCESS_INSTANCES_INCIDENT_RESOLUTION =
       REST_API_PATH + "/process-instances/incident-resolution";
   private static final String URL_PROCESS_INSTANCES_MIGRATION =
@@ -96,6 +105,10 @@ public class RestGatewayPaths {
       REST_API_PATH + "/process-definitions/statistics/process-instances";
   private static final String URL_PROCESS_DEFINITION_INSTANCE_VERSION_STATISTICS =
       REST_API_PATH + "/process-definitions/%s/statistics/process-instances";
+  private static final String URL_INCIDENT_PROCESS_INSTANCE_STATISTICS_BY_PROCESS_DEFINITION =
+      REST_API_PATH + "/incidents/statistics/process-instances-by-definition";
+  private static final String URL_INCIDENT_PROCESS_INSTANCE_STATISTICS_BY_ERROR =
+      REST_API_PATH + "/incidents/statistics/process-instances-by-error";
 
   /**
    * @return the topology request URL
@@ -183,12 +196,24 @@ public class RestGatewayPaths {
     return String.format(URL_PROCESS_INSTANCE_CANCELLATION, processInstanceKey);
   }
 
+  public static String getDeleteProcessInstanceUrl(final long processInstanceKey) {
+    return String.format(URL_PROCESS_INSTANCE_DELETION, processInstanceKey);
+  }
+
   public static String getBroadcastSignalUrl() {
     return URL_SIGNAL_BROADCAST;
   }
 
+  public static String getEvaluateConditionalUrl() {
+    return URL_CONDITIONAL_EVALUATION;
+  }
+
   public static String getEvaluateDecisionUrl() {
     return URL_DECISION_EVALUATION;
+  }
+
+  public static String getExpressionEvaluationUrl() {
+    return URL_EXPRESSION_EVALUATION;
   }
 
   /**
@@ -262,6 +287,10 @@ public class RestGatewayPaths {
     return URL_PROCESS_INSTANCES_CANCELLATION;
   }
 
+  public static String getProcessInstancesDeletionUrl() {
+    return URL_PROCESS_INSTANCES_DELETION;
+  }
+
   public static String getProcessInstancesIncidentResolutionUrl() {
     return URL_PROCESS_INSTANCES_INCIDENT_RESOLUTION;
   }
@@ -308,6 +337,10 @@ public class RestGatewayPaths {
 
   public static String getBatchOperationUrl(final String batchOperationKey) {
     return String.format(URL_BATCH_OPERATION, batchOperationKey);
+  }
+
+  public static String getBatchOperationsSearchUrl() {
+    return URL_BATCH_OPERATIONS_SEARCH;
   }
 
   public static String getVariableUrl(final long variableKey) {
@@ -370,6 +403,14 @@ public class RestGatewayPaths {
   public static String getProcessDefinitionInstanceVersionStatisticsUrl(
       final String processDefinitionId) {
     return String.format(URL_PROCESS_DEFINITION_INSTANCE_VERSION_STATISTICS, processDefinitionId);
+  }
+
+  public static String getIncidentProcessInstanceStatisticsByErrorUrl() {
+    return URL_INCIDENT_PROCESS_INSTANCE_STATISTICS_BY_ERROR;
+  }
+
+  public static String getIncidentProcessInstanceStatisticsByDefinitionUrl() {
+    return URL_INCIDENT_PROCESS_INSTANCE_STATISTICS_BY_PROCESS_DEFINITION;
   }
 
   @Deprecated

@@ -42,6 +42,7 @@ import io.camunda.configuration.Write;
 import io.camunda.configuration.beans.BrokerBasedProperties;
 import io.camunda.configuration.beans.LegacyBrokerBasedProperties;
 import io.camunda.zeebe.backup.azure.SasTokenConfig;
+import io.camunda.zeebe.broker.exporter.context.ExporterConfiguration;
 import io.camunda.zeebe.broker.system.configuration.ConfigManagerCfg;
 import io.camunda.zeebe.broker.system.configuration.ExporterCfg;
 import io.camunda.zeebe.broker.system.configuration.ExportingCfg;
@@ -198,6 +199,7 @@ public class BrokerBasedPropertiesOverride {
 
   private void populateFromEngine(final BrokerBasedProperties override) {
     populateFromDistribution(override);
+    populateFromBatchOperations(override);
   }
 
   private void populateFromDistribution(final BrokerBasedProperties override) {
@@ -207,6 +209,16 @@ public class BrokerBasedPropertiesOverride {
     final var distributionCfg = override.getExperimental().getEngine().getDistribution();
     distributionCfg.setMaxBackoffDuration(distribution.getMaxBackoffDuration());
     distributionCfg.setRedistributionInterval(distribution.getRedistributionInterval());
+  }
+
+  private void populateFromBatchOperations(final BrokerBasedProperties override) {
+    final var engineBatchOperation =
+        unifiedConfiguration.getCamunda().getProcessing().getEngine().getBatchOperations();
+    override
+        .getExperimental()
+        .getEngine()
+        .getBatchOperations()
+        .setSchedulerInterval(engineBatchOperation.getSchedulerInterval());
   }
 
   private void populateFromFlowControl(final BrokerBasedProperties override) {
@@ -369,6 +381,7 @@ public class BrokerBasedPropertiesOverride {
     override.getCluster().setReplicationFactor(cluster.getReplicationFactor());
     override.getCluster().setClusterSize(cluster.getSize());
     override.getCluster().setClusterName(cluster.getName());
+    override.getCluster().setClusterId(cluster.getClusterId());
 
     populateFromMembership(override);
     populateFromRaftProperties(override);
@@ -482,6 +495,10 @@ public class BrokerBasedPropertiesOverride {
         .getExperimental()
         .getRaft()
         .setPreallocateSegmentFiles(raft.isPreallocateSegmentFiles());
+    override
+        .getExperimental()
+        .getRaft()
+        .setSegmentPreallocationStrategy(raft.getSegmentPreallocationStrategy());
   }
 
   private void populateFromClusterMetadata(final BrokerBasedProperties override) {
@@ -489,8 +506,10 @@ public class BrokerBasedPropertiesOverride {
     final var syncDelay = metadata.getSyncDelay();
     final var syncTimeout = metadata.getSyncRequestTimeout();
     final var gossipFanout = metadata.getGossipFanout();
+    final var syncInitializerDelay = metadata.getSyncInitializerDelay();
     final var configManagerGossipConfig =
-        new ClusterConfigurationGossiperConfig(syncDelay, syncTimeout, gossipFanout);
+        new ClusterConfigurationGossiperConfig(
+            syncDelay, syncTimeout, gossipFanout, syncInitializerDelay);
     override.getCluster().setConfigManager(new ConfigManagerCfg(configManagerGossipConfig));
   }
 
@@ -668,6 +687,7 @@ public class BrokerBasedPropertiesOverride {
     brokerRocksDb.setAccessMetrics(
         AccessMetricsConfiguration.Kind.valueOf(unifiedRocksDb.getAccessMetrics().name()));
     brokerRocksDb.setMemoryLimit(unifiedRocksDb.getMemoryLimit());
+    brokerRocksDb.setMemoryAllocationStrategy(unifiedRocksDb.getMemoryAllocationStrategy());
     brokerRocksDb.setMaxOpenFiles(unifiedRocksDb.getMaxOpenFiles());
     brokerRocksDb.setMaxWriteBufferNumber(unifiedRocksDb.getMaxWriteBufferNumber());
     brokerRocksDb.setMinWriteBufferNumberToMerge(unifiedRocksDb.getMinWriteBufferNumberToMerge());
@@ -747,8 +767,8 @@ public class BrokerBasedPropertiesOverride {
   }
 
   private void populateCamundaExporter(final BrokerBasedProperties override) {
-    final SecondaryStorage secondaryStorage =
-        unifiedConfiguration.getCamunda().getData().getSecondaryStorage();
+    final Data data = unifiedConfiguration.getCamunda().getData();
+    final SecondaryStorage secondaryStorage = data.getSecondaryStorage();
 
     if (!secondaryStorage.getAutoconfigureCamundaExporter()) {
       LOGGER.debug("Skipping autoconfiguration of the (default) exporter 'camundaexporter'");
@@ -757,12 +777,8 @@ public class BrokerBasedPropertiesOverride {
 
     final DocumentBasedSecondaryStorageDatabase database;
     switch (secondaryStorage.getType()) {
-      case elasticsearch ->
-          database =
-              unifiedConfiguration.getCamunda().getData().getSecondaryStorage().getElasticsearch();
-      case opensearch ->
-          database =
-              unifiedConfiguration.getCamunda().getData().getSecondaryStorage().getOpensearch();
+      case elasticsearch -> database = secondaryStorage.getElasticsearch();
+      case opensearch -> database = secondaryStorage.getOpensearch();
       default -> {
         // RDBMS and NONE are not supported.
         return;
@@ -889,11 +905,19 @@ public class BrokerBasedPropertiesOverride {
     setArg(args, "bulk.delay", database.getBulk().getDelay().getSeconds());
     setArg(args, "bulk.size", database.getBulk().getSize());
     setArg(args, "bulk.memoryLimit", database.getBulk().getMemoryLimit().toMegabytes());
+
+    final var auditLog = data.getAuditLog();
+    final var historyDeletion = data.getHistoryDeletion();
+    exporter.setArgs(
+        ExporterConfiguration.of(io.camunda.exporter.config.ExporterConfiguration.class, args)
+            .apply(config -> config.setAuditLog(auditLog.toConfiguration()))
+            .apply(config -> config.setHistoryDeletion(historyDeletion.toConfiguration()))
+            .toArgs());
   }
 
   private void populateRdbmsExporter(final BrokerBasedProperties override) {
-    final SecondaryStorage secondaryStorage =
-        unifiedConfiguration.getCamunda().getData().getSecondaryStorage();
+    final Data data = unifiedConfiguration.getCamunda().getData();
+    final SecondaryStorage secondaryStorage = data.getSecondaryStorage();
 
     final Rdbms database = secondaryStorage.getRdbms();
 
@@ -967,7 +991,13 @@ public class BrokerBasedPropertiesOverride {
     setArgIfNotNull(
         args, "batchOperationItemInsertBlockSize", database.getBatchOperationItemInsertBlockSize());
 
-    exporter.setArgs(args);
+    final var auditLog = data.getAuditLog();
+    final var historyDeletion = data.getHistoryDeletion();
+    exporter.setArgs(
+        ExporterConfiguration.of(io.camunda.exporter.rdbms.ExporterConfiguration.class, args)
+            .apply(config -> config.setAuditLog(auditLog.toConfiguration()))
+            .apply(config -> config.setHistoryDeletion(historyDeletion.toConfiguration()))
+            .toArgs());
   }
 
   private void populateFromMonitoring(final BrokerBasedProperties override) {

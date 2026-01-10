@@ -33,13 +33,18 @@ import { DocumentationLink } from "src/components/documentation";
 import { Caption, Row, TextFieldContainer } from "../components";
 import OwnerSelection from "../owner-selection";
 import { useDropdownAutoFocus } from "./useDropdownAutoFocus";
-import { isValidId, isValidResourceId } from "src/utility/validate";
+import {
+  isValidId,
+  isValidResourceId,
+  getIdPattern,
+} from "src/utility/validate";
 
 type ResourcePermissionsType = {
   [key in keyof typeof ResourceType]: Authorization["permissionTypes"];
 };
 
 const resourcePermissions: ResourcePermissionsType = {
+  AUDIT_LOG: [PermissionType.READ],
   AUTHORIZATION: [
     PermissionType.CREATE,
     PermissionType.DELETE,
@@ -67,6 +72,7 @@ const resourcePermissions: ResourcePermissionsType = {
     PermissionType.READ_DECISION_INSTANCE,
   ],
   DECISION_REQUIREMENTS_DEFINITION: [PermissionType.READ],
+  EXPRESSION: [PermissionType.EVALUATE],
   RESOURCE: [
     PermissionType.CREATE,
     PermissionType.READ,
@@ -325,7 +331,10 @@ export const AddModal: FC<UseEntityModalProps<ResourceType>> = ({
               rules={{
                 required: t("resourceIdRequired"),
                 validate: (value) =>
-                  isValidResourceId(value) || t("pleaseEnterValidResourceId"),
+                  isValidResourceId(value) ||
+                  t("pleaseEnterValidResourceId", {
+                    pattern: getIdPattern(),
+                  }),
               }}
               render={({ field, fieldState }) => (
                 <TextField

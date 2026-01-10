@@ -137,7 +137,9 @@ final class TestSupport {
             ValueType.MULTI_INSTANCE,
             ValueType.HISTORY_DELETION,
             ValueType.CONDITIONAL_SUBSCRIPTION,
-            ValueType.CONDITIONAL_EVALUATION);
+            ValueType.CONDITIONAL_EVALUATION,
+            ValueType.EXPRESSION,
+            ValueType.JOB_METRICS_BATCH);
     return EnumSet.complementOf(excludedValueTypes).stream();
   }
 

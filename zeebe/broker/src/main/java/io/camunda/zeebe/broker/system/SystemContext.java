@@ -15,6 +15,7 @@ import io.camunda.search.clients.SearchClientsProxy;
 import io.camunda.security.auth.BrokerRequestAuthorizationConverter;
 import io.camunda.security.configuration.SecurityConfiguration;
 import io.camunda.security.validation.AuthorizationValidator;
+import io.camunda.security.validation.IdentityInitializationException;
 import io.camunda.service.UserServices;
 import io.camunda.zeebe.backup.azure.AzureBackupStore;
 import io.camunda.zeebe.backup.filesystem.FilesystemBackupStore;
@@ -23,12 +24,14 @@ import io.camunda.zeebe.backup.s3.S3BackupStore;
 import io.camunda.zeebe.backup.schedule.Schedule.NoneSchedule;
 import io.camunda.zeebe.broker.Loggers;
 import io.camunda.zeebe.broker.client.api.BrokerClient;
+import io.camunda.zeebe.broker.partitioning.RocksDbSharedCache;
 import io.camunda.zeebe.broker.system.configuration.BrokerCfg;
 import io.camunda.zeebe.broker.system.configuration.ClusterCfg;
 import io.camunda.zeebe.broker.system.configuration.DataCfg;
 import io.camunda.zeebe.broker.system.configuration.DiskCfg.FreeSpaceCfg;
 import io.camunda.zeebe.broker.system.configuration.ExperimentalCfg;
 import io.camunda.zeebe.broker.system.configuration.ExporterCfg;
+import io.camunda.zeebe.broker.system.configuration.RocksdbCfg;
 import io.camunda.zeebe.broker.system.configuration.SecurityCfg;
 import io.camunda.zeebe.broker.system.configuration.backup.AzureBackupStoreConfig;
 import io.camunda.zeebe.broker.system.configuration.backup.BackupCfg;
@@ -43,7 +46,6 @@ import io.camunda.zeebe.broker.system.configuration.partitioning.FixedPartitionC
 import io.camunda.zeebe.broker.system.configuration.partitioning.Scheme;
 import io.camunda.zeebe.engine.GlobalListenerConfiguration;
 import io.camunda.zeebe.engine.processing.identity.initialize.AuthorizationConfigurer;
-import io.camunda.zeebe.engine.processing.identity.initialize.IdentityInitializationException;
 import io.camunda.zeebe.protocol.impl.record.value.authorization.AuthorizationRecord;
 import io.camunda.zeebe.scheduler.ActorScheduler;
 import io.camunda.zeebe.util.Either;
@@ -260,6 +262,10 @@ public final class SystemContext {
         .map(ExperimentalCfg::getEngine)
         .map(EngineCfg::getGlobalListeners)
         .ifPresent(c -> validateListenersConfig(c));
+
+    Optional.of(experimental)
+        .map(ExperimentalCfg::getRocksdb)
+        .ifPresent(c -> validateRocksDbConfig(c, cluster.getPartitionsCount()));
   }
 
   private void validateDataConfig(final DataCfg dataCfg) {
@@ -593,6 +599,10 @@ public final class SystemContext {
     }
 
     listeners.setUserTask(validListeners);
+  }
+
+  private void validateRocksDbConfig(final RocksdbCfg rocksdbCfg, final int partitionsCount) {
+    RocksDbSharedCache.validateRocksDbMemory(rocksdbCfg, partitionsCount);
   }
 
   private void validateBackupSchedulerConfig(final BackupCfg backupSchedulerCfg) {

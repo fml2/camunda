@@ -26,21 +26,14 @@ test.describe('variables and incidents', () => {
     await page.route(
       URL_API_PATTERN,
       mockProcessesResponses({
-        groupedProcesses: [
+        processDefinitions: [
           {
-            bpmnProcessId: 'order-process',
-            name: null,
-            permissions: [],
-            processes: [
-              {
-                id: '2251799813686456',
-                name: 'order-process',
-                version: 1,
-                bpmnProcessId: 'order-process',
-                versionTag: null,
-              },
-            ],
+            processDefinitionId: 'order-process',
+            version: 1,
+            name: 'order-process',
+            processDefinitionKey: '2251799813686456',
             tenantId: '<default>',
+            hasStartForm: false,
           },
         ],
         batchOperations: {items: [], page: {totalItems: 0}},
@@ -61,7 +54,6 @@ test.describe('variables and incidents', () => {
               rootInstanceId: null,
               callHierarchy: [],
               sortValues: [],
-              permissions: [],
               tenantId: '<default>',
             },
           ],

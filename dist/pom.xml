@@ -116,6 +116,16 @@
 
     <dependency>
       <groupId>io.camunda</groupId>
+      <artifactId>camunda-gateway-model</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.camunda</groupId>
+      <artifactId>camunda-gateway-mapping-http</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.camunda</groupId>
       <artifactId>zeebe-gateway-rest</artifactId>
     </dependency>
 
@@ -781,7 +791,8 @@
           <configurationDirectory>config</configurationDirectory>
           <copyConfigurationDirectory>true</copyConfigurationDirectory>
           <extraJvmArguments>-XX:+ExitOnOutOfMemoryError
-            -Dfile.encoding=UTF-8 -Xshare:auto</extraJvmArguments>
+            -Dfile.encoding=UTF-8 -Xshare:auto
+            --add-opens=java.base/java.io=ALL-UNNAMED</extraJvmArguments>
           <!-- This will be added to the classpath as /urs/local/camunda/driver-lib/* -->
           <endorsedDir>driver-lib</endorsedDir>
           <includeConfigurationDirectoryInClasspath>true</includeConfigurationDirectoryInClasspath>
@@ -850,6 +861,33 @@
           </execution>
         </executions>
       </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>copy-openapi-yaml</id>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/camunda-zeebe/config/openapi/v2</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../zeebe/gateway-protocol/src/main/proto/v2</directory>
+                  <includes>
+                    <include>**/*.yaml</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <artifactId>maven-assembly-plugin</artifactId>
         <executions>

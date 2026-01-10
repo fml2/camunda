@@ -18,9 +18,9 @@ import {
   type ProcessInstancesFilter,
 } from 'modules/utils/filter/v2/processInstancesSearch';
 import {AutoSubmit} from 'modules/components/AutoSubmit';
-import {ProcessField} from '../../Filters/ProcessField';
-import {ProcessVersionField} from '../../Filters/ProcessVersionField';
-import {FlowNodeField} from '../../Filters/FlowNodeField';
+import {ProcessField} from './ProcessField';
+import {ProcessVersionField} from './ProcessVersionField';
+import {FlowNodeField} from './FlowNodeField';
 import {
   Container,
   Title,
@@ -32,16 +32,20 @@ import {
   RadioButtonChecked,
   WarningFilled,
 } from 'modules/components/StateIcon/styled';
-import {CheckboxGroup} from '../../Filters/CheckboxGroup';
+import {CheckboxGroup} from './CheckboxGroup';
 import {
   type OptionalFilter,
   OptionalFiltersFormGroup,
-} from '../../Filters/OptionalFiltersFormGroup';
+} from './OptionalFiltersFormGroup';
 import {TenantField} from 'modules/components/TenantField';
 import {processesStore} from 'modules/stores/processes/processes.list';
 import {batchModificationStore} from 'modules/stores/batchModification';
 import {variableFilterStore} from 'modules/stores/variableFilter';
 import {useNavigate, useSearchParams} from 'react-router-dom';
+import {
+  getDefinitionIdentifier,
+  splitDefinitionIdentifier,
+} from 'modules/hooks/processDefinitions';
 
 const initialValues: ProcessInstancesFilter = {
   active: true,
@@ -49,48 +53,50 @@ const initialValues: ProcessInstancesFilter = {
 };
 
 const Filters: React.FC = observer(() => {
+  const isBatchModificationEnabled = batchModificationStore.state.isEnabled;
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [visibleFilters, setVisibleFilters] = useState<OptionalFilter[]>([]);
-  const filtersFromUrl = parseProcessInstancesFilter(searchParams);
-  const isBatchModificationEnabled = batchModificationStore.state.isEnabled;
+  const filterValues = parseProcessInstancesFilter(searchParams);
   const variable = variableFilterStore.variable;
+  if (variable) {
+    filterValues.variableName = variable.name;
+    filterValues.variableValues = variable.values;
+  }
+  if (filterValues.process && filterValues.tenant !== 'all') {
+    filterValues.process = getDefinitionIdentifier(
+      filterValues.process,
+      filterValues.tenant,
+    );
+  }
+  if (filterValues.tenant === 'all') {
+    delete filterValues.process;
+    delete filterValues.version;
+  }
 
   return (
     <Form<ProcessInstancesFilter>
       onSubmit={(values) => {
-        variableFilterStore.setVariable(undefined);
+        if (
+          values.variableName !== undefined &&
+          values.variableValues !== undefined
+        ) {
+          variableFilterStore.setVariable({
+            name: values.variableName,
+            values: values.variableValues,
+          });
+        } else {
+          variableFilterStore.setVariable(undefined);
+        }
 
         navigate({
           search: updateProcessInstancesFilterSearchString(searchParams, {
             ...values,
-            ...(values.process !== undefined
-              ? {
-                  process: processesStore.state.processes.find(
-                    ({key}) => key === values.process,
-                  )?.bpmnProcessId,
-                }
-              : {}),
+            process: splitDefinitionIdentifier(values.process).definitionId,
           }),
         });
       }}
-      initialValues={{
-        ...filtersFromUrl,
-        ...(filtersFromUrl.process !== undefined
-          ? {
-              process: processesStore.getProcess({
-                bpmnProcessId: filtersFromUrl.process,
-                tenantId: filtersFromUrl.tenant,
-              })?.key,
-            }
-          : {}),
-        ...(variable
-          ? {
-              variableName: variable.name,
-              variableValues: variable.values,
-            }
-          : {}),
-      }}
+      initialValues={filterValues}
     >
       {({handleSubmit, form, values}) => (
         <StyledForm onSubmit={handleSubmit}>

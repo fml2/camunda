@@ -39,6 +39,9 @@
                 "sourceElementId": {
                   "type": "keyword"
                 },
+                "sourceElementInstanceKey": {
+                  "type": "long"
+                },
                 "targetElementId": {
                   "type": "keyword"
                 },
@@ -55,7 +58,10 @@
                 "ancestorScopeKey": {
                   "type": "long"
                 },
-                "useSourceParentKeyAsAncestorScope": {
+                "inferAncestorScopeFromSourceHierarchy": {
+                  "type": "boolean"
+                },
+                "useSourceParentKeyAsAncestorScopeKey": {
                   "type": "boolean"
                 }
               }
@@ -88,6 +94,9 @@
             },
             "tenantId": {
               "type": "keyword"
+            },
+            "rootProcessInstanceKey": {
+              "type": "long"
             }
           }
         }

@@ -50,13 +50,16 @@ import io.camunda.client.api.command.DeleteAuthorizationCommandStep1;
 import io.camunda.client.api.command.DeleteDocumentCommandStep1;
 import io.camunda.client.api.command.DeleteGroupCommandStep1;
 import io.camunda.client.api.command.DeleteMappingRuleCommandStep1;
+import io.camunda.client.api.command.DeleteProcessInstanceCommandStep1;
 import io.camunda.client.api.command.DeleteResourceCommandStep1;
 import io.camunda.client.api.command.DeleteRoleCommandStep1;
 import io.camunda.client.api.command.DeleteTenantCommandStep1;
 import io.camunda.client.api.command.DeleteUserCommandStep1;
 import io.camunda.client.api.command.DeployProcessCommandStep1;
 import io.camunda.client.api.command.DeployResourceCommandStep1;
+import io.camunda.client.api.command.EvaluateConditionalCommandStep1;
 import io.camunda.client.api.command.EvaluateDecisionCommandStep1;
+import io.camunda.client.api.command.EvaluateExpressionCommandStep1;
 import io.camunda.client.api.command.GloballyScopedClusterVariableCreationCommandStep1;
 import io.camunda.client.api.command.GloballyScopedClusterVariableDeletionCommandStep1;
 import io.camunda.client.api.command.MigrateProcessInstanceCommandStep1;
@@ -163,6 +166,8 @@ import io.camunda.client.api.search.request.UsersByRoleSearchRequest;
 import io.camunda.client.api.search.request.UsersByTenantSearchRequest;
 import io.camunda.client.api.search.request.UsersSearchRequest;
 import io.camunda.client.api.search.request.VariableSearchRequest;
+import io.camunda.client.api.statistics.request.IncidentProcessInstanceStatisticsByDefinitionRequest;
+import io.camunda.client.api.statistics.request.IncidentProcessInstanceStatisticsByErrorRequest;
 import io.camunda.client.api.statistics.request.ProcessDefinitionElementStatisticsRequest;
 import io.camunda.client.api.statistics.request.ProcessDefinitionInstanceStatisticsRequest;
 import io.camunda.client.api.statistics.request.ProcessDefinitionInstanceVersionStatisticsRequest;
@@ -394,6 +399,20 @@ public interface CamundaClient extends AutoCloseable, JobClient {
    * @return a builder for the command
    */
   CancelProcessInstanceCommandStep1 newCancelInstanceCommand(long processInstanceKey);
+
+  /**
+   * Command to delete a process instance history.
+   *
+   * <pre>
+   * camundaClient
+   *  .newDeleteInstanceCommand(processInstanceKey)
+   *  .send();
+   * </pre>
+   *
+   * @param processInstanceKey the key which identifies the corresponding process instance
+   * @return a builder for the command
+   */
+  DeleteProcessInstanceCommandStep1 newDeleteInstanceCommand(long processInstanceKey);
 
   /**
    * Command to set and/or update the variables of a given flow element (e.g. process instance,
@@ -3068,4 +3087,83 @@ public interface CamundaClient extends AutoCloseable, JobClient {
    */
   ProcessDefinitionInstanceVersionStatisticsRequest
       newProcessDefinitionInstanceVersionStatisticsRequest(String processDefinitionId);
+
+  /**
+   * Command to evaluate root-level conditional start events for process definitions.
+   *
+   * <pre>
+   * camundaClient
+   *  .newEvaluateConditionalCommand()
+   *  .variables(json)
+   *  .send();
+   *
+   * // Or for a specific process definition and tenant:
+   * camundaClient
+   *  .newEvaluateConditionalCommand()
+   *  .variables(json)
+   *  .processDefinitionKey(12345L)
+   *  .tenantId("tenant-1")
+   *  .send();
+   * </pre>
+   *
+   * @return a builder for the request to evaluate root-level conditional start events
+   */
+  EvaluateConditionalCommandStep1 newEvaluateConditionalCommand();
+
+  /**
+   * Retrieves statistics about active process instances that currently have active incidents,
+   * grouped by incident error hash code.
+   *
+   * <pre>
+   * camundaClient
+   *  .newIncidentProcessInstanceStatisticsByErrorRequest()
+   *  .page(p -> p.limit(50))
+   *  .sort(s -> s.activeInstancesWithErrorCount().desc())
+   *  .send();
+   * </pre>
+   *
+   * @return a builder for querying process instance statistics grouped by incident error
+   */
+  IncidentProcessInstanceStatisticsByErrorRequest
+      newIncidentProcessInstanceStatisticsByErrorRequest();
+
+  /**
+   * Command to evaluate an expression.
+   *
+   * <pre>
+   * camundaClient
+   *  .newEvaluateExpressionCommand()
+   *  .expression("=x + y")
+   *  .tenantId("tenant_123")
+   *  .send();
+   * </pre>
+   *
+   * @return a builder for the command
+   */
+  EvaluateExpressionCommandStep1 newEvaluateExpressionCommand();
+
+  /**
+   * Executes a statistics request that returns counts of active process instances with active
+   * incidents, grouped by process definition.
+   *
+   * <p>The statistics are scoped to a specific incident error and therefore require an error hash
+   * code to be provided.
+   *
+   * <p>Each result item represents a single process definition (including version and tenant) and
+   * contains the number of active process instances that currently have an incident with the given
+   * error hash code.
+   *
+   * <pre>
+   * camundaClient
+   *  .newIncidentProcessInstanceStatisticsByDefinitionRequest(errorHashCode)
+   *  .page(p -> p.limit(50))
+   *  .sort(s -> s.activeInstancesWithErrorCount().desc())
+   *  .send();
+   * </pre>
+   *
+   * @param errorHashCode the error hash code to filter the incidents by
+   * @return a builder for the incident process instance statistics request grouped by definition
+   */
+  IncidentProcessInstanceStatisticsByDefinitionRequest
+      newIncidentProcessInstanceStatisticsByDefinitionRequest(int errorHashCode);
 }

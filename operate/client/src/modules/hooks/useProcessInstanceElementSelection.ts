@@ -15,17 +15,23 @@ import {useElementInstancesSearch} from 'modules/queries/elementInstances/useEle
 const ELEMENT_ID = 'elementId';
 const ELEMENT_INSTANCE_KEY = 'elementInstanceKey';
 const IS_MULTI_INSTANCE_BODY = 'isMultiInstanceBody';
+const IS_PLACEHOLDER = 'isPlaceholder';
+const ANCHOR_ELEMENT_ID = 'anchorElementId';
 
 type SelectionSearchParams = {
   [ELEMENT_ID]?: string;
   [ELEMENT_INSTANCE_KEY]?: string;
   [IS_MULTI_INSTANCE_BODY]?: boolean;
+  [IS_PLACEHOLDER]?: boolean;
+  [ANCHOR_ELEMENT_ID]?: string;
 };
 
 const deleteSelectionSearchParams = (params: URLSearchParams) => {
   params.delete(ELEMENT_ID);
   params.delete(ELEMENT_INSTANCE_KEY);
   params.delete(IS_MULTI_INSTANCE_BODY);
+  params.delete(IS_PLACEHOLDER);
+  params.delete(ANCHOR_ELEMENT_ID);
   return params;
 };
 
@@ -41,6 +47,12 @@ const setSelectionSearchParams = (
   }
   if (newParams[IS_MULTI_INSTANCE_BODY] === true) {
     params.set(IS_MULTI_INSTANCE_BODY, 'true');
+  }
+  if (newParams[IS_PLACEHOLDER] === true) {
+    params.set(IS_PLACEHOLDER, 'true');
+  }
+  if (newParams[ANCHOR_ELEMENT_ID]) {
+    params.set(ANCHOR_ELEMENT_ID, newParams[ANCHOR_ELEMENT_ID]);
   }
   return params;
 };
@@ -60,12 +72,21 @@ const useProcessInstanceElementSelection = () => {
   const {processInstanceId: processInstanceKey} =
     useProcessInstancePageParams();
   const elementInstanceKey = searchParams.get(ELEMENT_INSTANCE_KEY);
+
   const elementId = searchParams.get(ELEMENT_ID);
   const isMultiInstanceBody =
     searchParams.get(IS_MULTI_INSTANCE_BODY) === 'true';
+  const isPlaceholder = searchParams.get(IS_PLACEHOLDER) === 'true';
+  const anchorElementId = searchParams.get(ANCHOR_ELEMENT_ID);
 
   const selectElement = useCallback(
-    (elementId: string, isMultiInstanceBody: boolean = false) => {
+    ({
+      elementId,
+      isMultiInstanceBody = false,
+    }: {
+      elementId: string;
+      isMultiInstanceBody?: boolean;
+    }) => {
       setSearchParams((params) => {
         return updateSelectionSearchParams(params, {
           elementId,
@@ -77,16 +98,26 @@ const useProcessInstanceElementSelection = () => {
   );
 
   const selectElementInstance = useCallback(
-    (
-      elementId: string,
-      elementInstanceKey: string,
-      isMultiInstanceBody: boolean = false,
-    ) => {
+    ({
+      elementId,
+      elementInstanceKey,
+      isMultiInstanceBody = false,
+      isPlaceholder = false,
+      anchorElementId,
+    }: {
+      elementId: string;
+      elementInstanceKey: string;
+      isMultiInstanceBody?: boolean;
+      isPlaceholder?: boolean;
+      anchorElementId?: string;
+    }) => {
       setSearchParams((params) => {
         return updateSelectionSearchParams(params, {
           elementId,
           elementInstanceKey,
           isMultiInstanceBody,
+          isPlaceholder,
+          anchorElementId,
         });
       });
     },
@@ -99,12 +130,13 @@ const useProcessInstanceElementSelection = () => {
     });
   }, [setSearchParams]);
 
-  // If elementInstanceKey is in URL, fetch element instance by key
+  // If elementInstanceKey is in URL, fetch element instance by key.
+  // Skip fetching if elementInstanceKey is a placeholder key
   const {
     data: elementInstanceByKey,
     isFetching: isFetchingElementInstanceByKey,
   } = useElementInstance(elementInstanceKey ?? '', {
-    enabled: !!elementInstanceKey,
+    enabled: !!elementInstanceKey && isPlaceholder === false,
   });
 
   // If only elementId is in URL, search for all instances
@@ -116,7 +148,7 @@ const useProcessInstanceElementSelection = () => {
       enabled: !!elementId && !elementInstanceKey && !!processInstanceKey,
     });
 
-  const selectedElementInstance =
+  const resolvedElementInstance =
     elementInstanceByKey ??
     (searchResult?.page.totalItems === 1 ? searchResult?.items[0] : null);
 
@@ -124,8 +156,22 @@ const useProcessInstanceElementSelection = () => {
     selectElement,
     selectElementInstance,
     clearSelection,
-    selectedElementInstance,
+    /**
+     * The resolved element instance based on the URL search params, is null
+     * if no instance could be resolved or multiple instances exist for the given element id
+     */
+    resolvedElementInstance,
+    /**
+     * The currently selected element id from the URL search params
+     */
     selectedElementId: elementId,
+    /**
+     * The currently selected element instance key from the URL search params
+     */
+    selectedElementInstanceKey: elementInstanceKey,
+    isSelectedInstanceMultiInstanceBody: isMultiInstanceBody,
+    isSelectedInstancePlaceholder: isPlaceholder,
+    selectedAnchorElementId: anchorElementId,
     isFetchingElement:
       isFetchingElementInstanceByKey || isFetchingElementInstancesSearch,
   };

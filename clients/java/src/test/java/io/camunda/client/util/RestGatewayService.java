@@ -27,17 +27,22 @@ import io.camunda.client.protocol.rest.AuthorizationCreateResult;
 import io.camunda.client.protocol.rest.AuthorizationResult;
 import io.camunda.client.protocol.rest.BatchOperationCreatedResult;
 import io.camunda.client.protocol.rest.BatchOperationResponse;
+import io.camunda.client.protocol.rest.BatchOperationSearchQueryResult;
 import io.camunda.client.protocol.rest.ClusterVariableResult;
 import io.camunda.client.protocol.rest.DecisionDefinitionResult;
 import io.camunda.client.protocol.rest.DecisionInstanceResult;
 import io.camunda.client.protocol.rest.DecisionRequirementsResult;
 import io.camunda.client.protocol.rest.DeploymentResult;
 import io.camunda.client.protocol.rest.ElementInstanceResult;
+import io.camunda.client.protocol.rest.EvaluateConditionalResult;
 import io.camunda.client.protocol.rest.EvaluateDecisionResult;
+import io.camunda.client.protocol.rest.ExpressionEvaluationResult;
 import io.camunda.client.protocol.rest.FormResult;
 import io.camunda.client.protocol.rest.GroupCreateResult;
 import io.camunda.client.protocol.rest.GroupResult;
 import io.camunda.client.protocol.rest.GroupUpdateResult;
+import io.camunda.client.protocol.rest.IncidentProcessInstanceStatisticsByDefinitionQueryResult;
+import io.camunda.client.protocol.rest.IncidentProcessInstanceStatisticsByErrorQueryResult;
 import io.camunda.client.protocol.rest.IncidentResult;
 import io.camunda.client.protocol.rest.JobActivationResult;
 import io.camunda.client.protocol.rest.MappingRuleCreateResult;
@@ -116,6 +121,10 @@ public class RestGatewayService {
 
   public void onEvaluateDecisionRequest(final EvaluateDecisionResult response) {
     registerPost(RestGatewayPaths.getEvaluateDecisionUrl(), response);
+  }
+
+  public void onExpressionEvaluationRequest(final ExpressionEvaluationResult response) {
+    registerPost(RestGatewayPaths.getExpressionEvaluationUrl(), response);
   }
 
   public void onDeploymentsRequest(final DeploymentResult response) {
@@ -258,6 +267,15 @@ public class RestGatewayService {
     registerPost(RestGatewayPaths.getProcessInstancesCancelUrl(), response);
   }
 
+  public void onDeleteProcessInstanceRequest(
+      final long processInstanceKey, final BatchOperationCreatedResult response) {
+    registerPost(RestGatewayPaths.getDeleteProcessInstanceUrl(processInstanceKey), response);
+  }
+
+  public void onDeleteProcessInstancesRequest(final BatchOperationCreatedResult response) {
+    registerPost(RestGatewayPaths.getProcessInstancesDeletionUrl(), response);
+  }
+
   public void onResolveIncidentsRequest(final BatchOperationCreatedResult response) {
     registerPost(RestGatewayPaths.getProcessInstancesIncidentResolutionUrl(), response);
   }
@@ -331,6 +349,10 @@ public class RestGatewayService {
     registerGet(RestGatewayPaths.getBatchOperationUrl(batchOperationKey), response);
   }
 
+  public void onSearchBatchOperationsRequest(final BatchOperationSearchQueryResult response) {
+    registerPost(RestGatewayPaths.getBatchOperationsSearchUrl(), response);
+  }
+
   public void onVariableRequest(final long variableKey, final VariableResult response) {
     registerGet(RestGatewayPaths.getVariableUrl(variableKey), response);
   }
@@ -394,6 +416,10 @@ public class RestGatewayService {
     registerPost(RestGatewayPaths.getBroadcastSignalUrl(), response);
   }
 
+  public void onEvaluateConditionalRequest(final EvaluateConditionalResult response) {
+    registerPost(RestGatewayPaths.getEvaluateConditionalUrl(), response);
+  }
+
   public void onRoleRequest(final String roleId, final RoleResult response) {
     registerGet(RestGatewayPaths.getRoleUrl(roleId), response);
   }
@@ -417,6 +443,16 @@ public class RestGatewayService {
     registerPost(
         RestGatewayPaths.getProcessDefinitionInstanceVersionStatisticsUrl(processDefinitionId),
         response);
+  }
+
+  public void onIncidentProcessInstanceStatisticsByErrorRequest(
+      final IncidentProcessInstanceStatisticsByErrorQueryResult response) {
+    registerPost(RestGatewayPaths.getIncidentProcessInstanceStatisticsByErrorUrl(), response);
+  }
+
+  public void onIncidentProcessInstanceStatisticsByDefinitionRequest(
+      final IncidentProcessInstanceStatisticsByDefinitionQueryResult response) {
+    registerPost(RestGatewayPaths.getIncidentProcessInstanceStatisticsByDefinitionUrl(), response);
   }
 
   public void onStatusRequestHealthy() {

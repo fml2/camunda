@@ -14,6 +14,7 @@ import io.camunda.zeebe.protocol.record.RecordValue;
 import io.camunda.zeebe.protocol.record.ValueType;
 import io.camunda.zeebe.protocol.record.intent.AuthorizationIntent;
 import io.camunda.zeebe.protocol.record.intent.BatchOperationChunkIntent;
+import io.camunda.zeebe.protocol.record.intent.BatchOperationExecutionIntent;
 import io.camunda.zeebe.protocol.record.intent.BatchOperationIntent;
 import io.camunda.zeebe.protocol.record.intent.ClockIntent;
 import io.camunda.zeebe.protocol.record.intent.CommandDistributionIntent;
@@ -73,6 +74,7 @@ import io.camunda.zeebe.protocol.record.value.DeploymentDistributionRecordValue;
 import io.camunda.zeebe.protocol.record.value.DeploymentRecordValue;
 import io.camunda.zeebe.protocol.record.value.ErrorRecordValue;
 import io.camunda.zeebe.protocol.record.value.EscalationRecordValue;
+import io.camunda.zeebe.protocol.record.value.ExpressionRecordValue;
 import io.camunda.zeebe.protocol.record.value.GlobalListenerBatchRecordValue;
 import io.camunda.zeebe.protocol.record.value.GroupRecordValue;
 import io.camunda.zeebe.protocol.record.value.HistoryDeletionRecordValue;
@@ -115,6 +117,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Spliterator;
 import java.util.Spliterators;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -390,6 +393,10 @@ public final class RecordingExporter implements Exporter {
         records(ValueType.CLUSTER_VARIABLE, ClusterVariableRecordValue.class));
   }
 
+  public static ExpressionRecordStream expressionRecords() {
+    return new ExpressionRecordStream(records(ValueType.EXPRESSION, ExpressionRecordValue.class));
+  }
+
   public static VariableRecordStream variableRecords(final VariableIntent intent) {
     return variableRecords().withIntent(intent);
   }
@@ -634,7 +641,7 @@ public final class RecordingExporter implements Exporter {
   }
 
   public static BatchOperationExecutionRecordStream batchOperationExecutionRecords(
-      final BatchOperationIntent intent) {
+      final BatchOperationExecutionIntent intent) {
     return batchOperationExecutionRecords().withIntent(intent);
   }
 
@@ -772,6 +779,15 @@ public final class RecordingExporter implements Exporter {
       try {
         overrideMaximumWaitTime = true;
         conditionFactory.untilAsserted(throwingRunnable);
+      } finally {
+        overrideMaximumWaitTime = false;
+      }
+    }
+
+    public void until(final Callable<Boolean> callable) {
+      try {
+        overrideMaximumWaitTime = true;
+        conditionFactory.until(callable);
       } finally {
         overrideMaximumWaitTime = false;
       }

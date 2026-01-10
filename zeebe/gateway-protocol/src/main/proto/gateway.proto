@@ -791,19 +791,25 @@ message ModifyProcessInstanceRequest {
   }
 
   message MoveInstruction {
+    // the key of the element instance that should be moved
+    int64 sourceElementInstanceKey = 1;
     // the id of the elements that should be moved
-    string sourceElementId = 1;
+    string sourceElementId = 2;
     // the id of the element scope that the elements should be moved to
-    string targetElementId = 2;
+    string targetElementId = 3;
     // instructions describing which variables should be created
-    repeated VariableInstruction variableInstructions = 3;
+    repeated VariableInstruction variableInstructions = 4;
     // the key of the ancestor scope the element instance should be created in;
     // set to -1 to create the new element instance within an existing element
     // instance of the flow scope
-    int64 ancestorElementInstanceKey = 4;
-    // whether to use the source element's parent key as the ancestor element
+    int64 ancestorElementInstanceKey = 5;
+    // whether to use the source element hierarchy to infer the ancestor element
     // instance key
-    bool useSourceParentKeyAsAncestorScopeKey = 5;
+    bool inferAncestorScopeFromSourceHierarchy = 6;
+    // whether to use the source's direct parent key as the ancestor scope key;
+    // this is a simpler alternative to inferAncestorScopeFromSourceHierarchy
+    // that skips hierarchy traversal and directly uses the source's parent key
+    bool useSourceParentKeyAsAncestorScopeKey = 7;
   }
 }
 
@@ -867,7 +873,7 @@ message BroadcastSignalResponse {
   string tenantId = 2;
 }
 
-message ConditionalEvaluationInstruction {
+message EvaluateConditionalRequest {
   // Used to evaluate root-level conditional start events for a tenant with the given ID.
   // This will only evaluate root-level conditional start events of process definitions which belong to the tenant.
   string tenantId = 1;
@@ -884,7 +890,7 @@ message ProcessInstanceReference {
   int64 processInstanceKey = 2;
 }
 
-message EvaluateConditionalResult {
+message EvaluateConditionalResponse {
   // List of process instances created. If no root-level conditional start events evaluated to true, the list will be empty.
   repeated ProcessInstanceReference processInstances = 1;
 }
@@ -1226,7 +1232,7 @@ service Gateway {
       - If a processDefinitionKey is not provided, this indicates that the client is not authorized
         to start process instances for at least one of the matched process definitions
    */
-  rpc EvaluateConditional (ConditionalEvaluationInstruction) returns (EvaluateConditionalResult) {
+  rpc EvaluateConditional (EvaluateConditionalRequest) returns (EvaluateConditionalResponse) {
 
   }
 }

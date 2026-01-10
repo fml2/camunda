@@ -12,6 +12,8 @@ import static io.camunda.zeebe.protocol.record.intent.DeploymentIntent.CREATE;
 import io.camunda.search.clients.SearchClientsProxy;
 import io.camunda.security.auth.BrokerRequestAuthorizationConverter;
 import io.camunda.zeebe.dmn.DecisionEngineFactory;
+import io.camunda.zeebe.el.ExpressionLanguageMetrics;
+import io.camunda.zeebe.el.impl.ExpressionLanguageMetricsImpl;
 import io.camunda.zeebe.engine.EngineConfiguration;
 import io.camunda.zeebe.engine.metrics.BatchOperationMetrics;
 import io.camunda.zeebe.engine.metrics.DistributionMetrics;
@@ -36,6 +38,7 @@ import io.camunda.zeebe.engine.processing.distribution.CommandDistributionContin
 import io.camunda.zeebe.engine.processing.distribution.CommandDistributionFinishProcessor;
 import io.camunda.zeebe.engine.processing.distribution.CommandRedistributor;
 import io.camunda.zeebe.engine.processing.dmn.DecisionEvaluationEvaluateProcessor;
+import io.camunda.zeebe.engine.processing.expression.ExpressionProcessors;
 import io.camunda.zeebe.engine.processing.globallistener.GlobalListenersProcessors;
 import io.camunda.zeebe.engine.processing.historydeletion.HistoryDeletionProcessors;
 import io.camunda.zeebe.engine.processing.identity.AuthorizationProcessors;
@@ -107,7 +110,7 @@ public final class EngineProcessors {
     final var scheduledTaskStateFactory =
         typedRecordProcessorContext.getScheduledTaskStateFactory();
     final var writers = typedRecordProcessorContext.getWriters();
-    final var typedRecordProcessors = TypedRecordProcessors.processors(keyGenerator, writers);
+    final var typedRecordProcessors = TypedRecordProcessors.processors();
 
     typedRecordProcessors.withListener(processingState);
 
@@ -127,6 +130,8 @@ public final class EngineProcessors {
         new DistributionMetrics(typedRecordProcessorContext.getMeterRegistry());
     final var batchOperationMetrics =
         new BatchOperationMetrics(typedRecordProcessorContext.getMeterRegistry(), partitionId);
+    final ExpressionLanguageMetricsImpl expressionLanguageMetrics =
+        new ExpressionLanguageMetricsImpl(typedRecordProcessorContext.getMeterRegistry());
 
     subscriptionCommandSender.setWriters(writers);
 
@@ -151,7 +156,8 @@ public final class EngineProcessors {
             decisionBehavior,
             clock,
             authCheckBehavior,
-            transientProcessMessageSubscriptionState);
+            transientProcessMessageSubscriptionState,
+            expressionLanguageMetrics);
 
     final var commandDistributionBehavior =
         new CommandDistributionBehavior(
@@ -178,7 +184,8 @@ public final class EngineProcessors {
         config,
         clock,
         authCheckBehavior,
-        routingInfo);
+        routingInfo,
+        expressionLanguageMetrics);
     addMessageProcessors(
         typedRecordProcessorContext.getPartitionId(),
         bpmnBehaviors,
@@ -370,6 +377,14 @@ public final class EngineProcessors {
         config,
         processingState);
 
+    ExpressionProcessors.addProcessors(
+        keyGenerator,
+        typedRecordProcessors,
+        writers,
+        bpmnBehaviors.expressionBehavior(),
+        bpmnBehaviors.expressionLanguage(),
+        authCheckBehavior);
+
     return typedRecordProcessors;
   }
 
@@ -400,7 +415,8 @@ public final class EngineProcessors {
       final DecisionBehavior decisionBehavior,
       final InstantSource clock,
       final AuthorizationCheckBehavior authCheckBehavior,
-      final TransientPendingSubscriptionState transientProcessMessageSubscriptionState) {
+      final TransientPendingSubscriptionState transientProcessMessageSubscriptionState,
+      final ExpressionLanguageMetrics expressionLanguageMetrics) {
     return new BpmnBehaviorsImpl(
         processingState,
         writers,
@@ -412,7 +428,8 @@ public final class EngineProcessors {
         jobStreamer,
         clock,
         authCheckBehavior,
-        transientProcessMessageSubscriptionState);
+        transientProcessMessageSubscriptionState,
+        expressionLanguageMetrics);
   }
 
   private static TypedRecordProcessor<ProcessInstanceRecord> addProcessProcessors(
@@ -464,7 +481,8 @@ public final class EngineProcessors {
       final EngineConfiguration config,
       final InstantSource clock,
       final AuthorizationCheckBehavior authCheckBehavior,
-      final RoutingInfo routingInfo) {
+      final RoutingInfo routingInfo,
+      final ExpressionLanguageMetrics expressionLanguageMetrics) {
 
     // on deployment partition CREATE Command is received and processed
     // it will cause a distribution to other partitions
@@ -478,7 +496,8 @@ public final class EngineProcessors {
             distributionBehavior,
             config,
             clock,
-            authCheckBehavior);
+            authCheckBehavior,
+            expressionLanguageMetrics);
 
     typedRecordProcessors.onCommand(ValueType.DEPLOYMENT, CREATE, processor);
 
@@ -634,7 +653,7 @@ public final class EngineProcessors {
             bpmnBehaviors.stateBehavior(),
             bpmnBehaviors.eventTriggerBehavior(),
             authCheckBehavior,
-            bpmnBehaviors.expressionBehavior());
+            bpmnBehaviors.expressionProcessor());
     typedRecordProcessors.onCommand(
         ValueType.CONDITIONAL_EVALUATION,
         ConditionalEvaluationIntent.EVALUATE,

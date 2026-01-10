@@ -6,7 +6,7 @@
  * except in compliance with the Camunda License 1.0.
  */
 
-import {useEffect, useMemo} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {observer} from 'mobx-react';
 import {formatDate} from 'modules/utils/date';
 import {useAuditLogs} from 'modules/queries/auditLog/useAuditLogs';
@@ -25,7 +25,11 @@ import {notificationsStore} from 'modules/stores/notifications';
 import {logger} from 'modules/logger';
 import {tracking} from 'modules/tracking';
 import {spaceAndCapitalize} from 'modules/utils/spaceAndCapitalize';
-import {AuditLogIcon} from './AuditLogIcon';
+import {
+  DetailsModal,
+  type DetailsModalState,
+} from 'modules/components/OperationsLogDetailsModal';
+import {OperationsLogStateIcon} from 'modules/components/OperationsLogStateIcon';
 
 type Props = {
   isRootNodeSelected: boolean;
@@ -55,6 +59,7 @@ const OperationsLog: React.FC<Props> = observer(
           },
         ],
         filter: {
+          category: {$neq: 'ADMIN'},
           processInstanceKey: isRootNodeSelected
             ? flowNodeInstanceId
             : undefined,
@@ -91,6 +96,10 @@ const OperationsLog: React.FC<Props> = observer(
       },
     });
 
+    const [detailsModal, setDetailsModal] = useState<DetailsModalState>({
+      isOpen: false,
+    });
+
     useEffect(() => {
       if (error !== null) {
         tracking.track({
@@ -114,7 +123,7 @@ const OperationsLog: React.FC<Props> = observer(
           )}`,
           result: (
             <OperationLogName>
-              <AuditLogIcon
+              <OperationsLogStateIcon
                 state={item.result}
                 data-testid={`${item.auditLogKey}-icon`}
               />
@@ -130,6 +139,7 @@ const OperationsLog: React.FC<Props> = observer(
               tooltipPosition="left"
               iconDescription="Open details"
               aria-label="Open details"
+              onClick={() => setDetailsModal({isOpen: true, auditLog: item})}
               hasIconOnly
               renderIcon={Information}
             />
@@ -197,6 +207,13 @@ const OperationsLog: React.FC<Props> = observer(
             },
           ]}
         />
+        {detailsModal.auditLog && (
+          <DetailsModal
+            isOpen={detailsModal.isOpen}
+            onClose={() => setDetailsModal({isOpen: false})}
+            auditLog={detailsModal.auditLog}
+          />
+        )}
       </Container>
     );
   },

@@ -12,8 +12,10 @@ import static org.assertj.core.api.Assertions.within;
 
 import io.camunda.application.commons.rdbms.RdbmsConfiguration;
 import io.camunda.db.rdbms.RdbmsService;
-import io.camunda.db.rdbms.write.RdbmsWriter;
+import io.camunda.db.rdbms.write.RdbmsWriterConfig;
+import io.camunda.db.rdbms.write.RdbmsWriters;
 import io.camunda.db.rdbms.write.service.HistoryCleanupService;
+import io.camunda.it.rdbms.db.fixtures.AuditLogFixtures;
 import io.camunda.it.rdbms.db.fixtures.BatchOperationFixtures;
 import io.camunda.it.rdbms.db.fixtures.DecisionInstanceFixtures;
 import io.camunda.it.rdbms.db.fixtures.ElementInstanceFixtures;
@@ -22,6 +24,7 @@ import io.camunda.it.rdbms.db.fixtures.ProcessInstanceFixtures;
 import io.camunda.it.rdbms.db.fixtures.UserTaskFixtures;
 import io.camunda.it.rdbms.db.fixtures.VariableFixtures;
 import io.camunda.it.rdbms.db.util.RdbmsTestConfiguration;
+import io.camunda.search.entities.AuditLogEntity.AuditLogEntityType;
 import io.camunda.search.entities.BatchOperationType;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -54,7 +57,8 @@ public class HistoryCleanupIT {
           "PROCESS_INSTANCE",
           "USER_TASK",
           "INCIDENT",
-          "DECISION_INSTANCE");
+          "DECISION_INSTANCE",
+          "AUDIT_LOG");
 
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -62,12 +66,13 @@ public class HistoryCleanupIT {
 
   HistoryCleanupService historyCleanupService;
 
-  RdbmsWriter rdbmsWriter;
+  RdbmsWriters rdbmsWriters;
 
   @BeforeEach
   void setUp() {
-    rdbmsWriter = rdbmsService.createWriter(0);
-    historyCleanupService = rdbmsWriter.getHistoryCleanupService();
+    final var config = new RdbmsWriterConfig.Builder().partitionId(0).build();
+    rdbmsWriters = rdbmsService.createWriter(config);
+    historyCleanupService = new HistoryCleanupService(config, rdbmsWriters);
   }
 
   @Test
@@ -78,7 +83,7 @@ public class HistoryCleanupIT {
     // WHEN we schedule history cleanup
     final OffsetDateTime now = OffsetDateTime.now();
     historyCleanupService.scheduleProcessForHistoryCleanup(processInstanceKey, now);
-    rdbmsWriter.flush();
+    rdbmsWriters.flush();
 
     // THEN
     final var expectedDate = now.plus(historyCleanupService.getHistoryCleanupInterval());
@@ -105,18 +110,18 @@ public class HistoryCleanupIT {
   public void shouldUpdateHistoryCleanupDateForBatchOperation() {
     // GIVEN
     final var batchOperation =
-        BatchOperationFixtures.createAndSaveBatchOperation(rdbmsWriter, b -> b);
+        BatchOperationFixtures.createAndSaveBatchOperation(rdbmsWriters, b -> b);
     final var batchOperationKey = batchOperation.batchOperationKey();
     final BatchOperationType batchOperationType = batchOperation.operationType();
 
     BatchOperationFixtures.createAndSaveRandomBatchOperationItems(
-        rdbmsWriter, batchOperationKey, 5);
+        rdbmsWriters, batchOperationKey, 5);
 
     // WHEN we schedule history cleanup
     final OffsetDateTime now = OffsetDateTime.now();
     historyCleanupService.scheduleBatchOperationForHistoryCleanup(
         batchOperationKey, batchOperationType, now);
-    rdbmsWriter.flush();
+    rdbmsWriters.flush();
 
     // THEN
     final var expectedDate =
@@ -129,11 +134,11 @@ public class HistoryCleanupIT {
 
   private Long createRandomProcessWithCleanupRelevantData() {
     final Long processInstanceKey =
-        ProcessInstanceFixtures.createAndSaveRandomProcessInstance(rdbmsWriter, b -> b)
+        ProcessInstanceFixtures.createAndSaveRandomProcessInstance(rdbmsWriters, b -> b)
             .processInstanceKey();
 
     ElementInstanceFixtures.createAndSaveRandomElementInstances(
-        rdbmsWriter, b -> b.processInstanceKey(processInstanceKey));
+        rdbmsWriters, b -> b.processInstanceKey(processInstanceKey));
 
     UserTaskFixtures.createAndSaveRandomUserTasks(
         rdbmsService, b -> b.processInstanceKey(processInstanceKey));
@@ -142,10 +147,13 @@ public class HistoryCleanupIT {
         rdbmsService, b -> b.processInstanceKey(processInstanceKey));
 
     IncidentFixtures.createAndSaveRandomIncidents(
-        rdbmsWriter, b -> b.processInstanceKey(processInstanceKey));
+        rdbmsWriters, b -> b.processInstanceKey(processInstanceKey));
 
     DecisionInstanceFixtures.createAndSaveRandomDecisionInstances(
-        rdbmsWriter, b -> b.processInstanceKey(processInstanceKey));
+        rdbmsWriters, b -> b.processInstanceKey(processInstanceKey));
+
+    AuditLogFixtures.createAndSaveRandomAuditLogs(
+        rdbmsWriters, b -> b.processInstanceKey(processInstanceKey));
 
     return processInstanceKey;
   }
@@ -189,9 +197,9 @@ public class HistoryCleanupIT {
     final var evaluationDate = OffsetDateTime.now().truncatedTo(ChronoUnit.MILLIS);
     final var decisionInstance =
         DecisionInstanceFixtures.createAndSaveRandomDecisionInstance(
-            rdbmsWriter,
+            rdbmsWriters,
             b -> b.processInstanceKey(-1L).evaluationDate(evaluationDate).historyCleanupDate(null));
-    rdbmsWriter.flush();
+    rdbmsWriters.flush();
 
     // THEN - verify cleanup date is calculated correctly
     final OffsetDateTime cleanupDate =
@@ -199,6 +207,39 @@ public class HistoryCleanupIT {
             "SELECT HISTORY_CLEANUP_DATE FROM DECISION_INSTANCE "
                 + "WHERE DECISION_INSTANCE_KEY = "
                 + decisionInstance.decisionInstanceKey(),
+            OffsetDateTime.class);
+
+    // The cleanup date should be evaluationDate + decisionInstanceTTL (default 30 days)
+    final var expectedCleanupDate = evaluationDate.plusDays(30);
+    assertThat(cleanupDate)
+        .describedAs(
+            "should have cleanup date set to evaluationDate + decisionInstanceTTL for decision"
+                + " instance without process instance")
+        .isNotNull()
+        .isEqualTo(expectedCleanupDate);
+  }
+
+  @Test
+  public void shouldSetHistoryCleanupDateForStandaloneDecisionAuditLog() {
+    // GIVEN
+    // Create a standalone decision audit log.
+    // Use a deterministic evaluation date for predictable cleanup date calculation
+    final var evaluationDate = OffsetDateTime.now().truncatedTo(ChronoUnit.MILLIS);
+    final var auditLog =
+        AuditLogFixtures.createRandomized(
+            b ->
+                b.entityType(AuditLogEntityType.DECISION)
+                    .processInstanceKey(-1L)
+                    .timestamp(evaluationDate)
+                    .historyCleanupDate(null));
+    AuditLogFixtures.createAndSaveAuditLog(rdbmsWriters, auditLog);
+
+    // THEN - verify cleanup date is calculated correctly
+    final OffsetDateTime cleanupDate =
+        jdbcTemplate.queryForObject(
+            "SELECT HISTORY_CLEANUP_DATE FROM AUDIT_LOG "
+                + "WHERE DECISION_DEFINITION_KEY = "
+                + auditLog.decisionDefinitionKey(),
             OffsetDateTime.class);
 
     // The cleanup date should be evaluationDate + decisionInstanceTTL (default 30 days)

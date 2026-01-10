@@ -40,7 +40,9 @@ import io.camunda.exporter.tasks.incident.IncidentUpdateTask;
 import io.camunda.exporter.tasks.incident.OpenSearchIncidentUpdateRepository;
 import io.camunda.search.connect.es.ElasticsearchConnector;
 import io.camunda.search.connect.os.OpensearchConnector;
+import io.camunda.webapps.schema.descriptors.DecisionInstanceDependant;
 import io.camunda.webapps.schema.descriptors.ProcessInstanceDependant;
+import io.camunda.webapps.schema.descriptors.index.HistoryDeletionIndex;
 import io.camunda.webapps.schema.descriptors.template.BatchOperationTemplate;
 import io.camunda.webapps.schema.descriptors.template.DecisionInstanceTemplate;
 import io.camunda.webapps.schema.descriptors.template.FlowNodeInstanceTemplate;
@@ -265,13 +267,13 @@ public final class BackgroundTaskManagerFactory {
   private OpenSearchHistoryDeletionRepository createHistoryDeletionRepository(
       final OpenSearchAsyncClient asyncClient) {
     return new OpenSearchHistoryDeletionRepository(
-        resourceProvider, asyncClient, executor, logger, partitionId);
+        resourceProvider, asyncClient, executor, logger, partitionId, config.getHistoryDeletion());
   }
 
   private ElasticsearchHistoryDeletionRepository createHistoryDeletionRepository(
       final ElasticsearchAsyncClient asyncClient) {
     return new ElasticsearchHistoryDeletionRepository(
-        resourceProvider, asyncClient, executor, logger, partitionId);
+        resourceProvider, asyncClient, executor, logger, partitionId, config.getHistoryDeletion());
   }
 
   private ReschedulingTask buildRolloverPeriodJob() {
@@ -309,6 +311,7 @@ public final class BackgroundTaskManagerFactory {
             postExport.getBatchSize(),
             executor,
             incidentNotifier,
+            metrics,
             logger),
         1,
         postExport.getDelayBetweenRuns(),
@@ -376,13 +379,20 @@ public final class BackgroundTaskManagerFactory {
   }
 
   private ReschedulingTask buildStandaloneDecisionArchiverJob() {
+    final var dependantTemplates = new ArrayList<DecisionInstanceDependant>();
+    resourceProvider.getIndexTemplateDescriptors().stream()
+        .filter(DecisionInstanceDependant.class::isInstance)
+        .map(DecisionInstanceDependant.class::cast)
+        .forEach(dependantTemplates::add);
+
     return buildReschedulingArchiverTask(
         new StandaloneDecisionArchiverJob(
             archiverRepository,
             resourceProvider.getIndexTemplateDescriptor(DecisionInstanceTemplate.class),
             metrics,
             logger,
-            executor));
+            executor,
+            dependantTemplates));
   }
 
   private ReschedulingTask buildReschedulingArchiverTask(final BackgroundTask task) {
@@ -403,12 +413,24 @@ public final class BackgroundTaskManagerFactory {
         .forEach(dependantTemplates::add);
 
     return buildHistoryDeletionTask(
-        new HistoryDeletionJob(dependantTemplates, executor, historyDeletionRepository, logger));
+        new HistoryDeletionJob(
+            dependantTemplates,
+            executor,
+            historyDeletionRepository,
+            logger,
+            resourceProvider.getIndexDescriptor(HistoryDeletionIndex.class),
+            resourceProvider.getIndexTemplateDescriptor(ListViewTemplate.class)));
   }
 
   private ReschedulingTask buildHistoryDeletionTask(final BackgroundTask task) {
-    // TODO make hardcoded values configurable
-    return new ReschedulingTask(task, 1, 1000, 60000, executor, logger);
+    final var historyDeletion = config.getHistoryDeletion();
+    return new ReschedulingTask(
+        task,
+        1,
+        historyDeletion.getDelayBetweenRuns().toMillis(),
+        historyDeletion.getMaxDelayBetweenRuns().toMillis(),
+        executor,
+        logger);
   }
 
   private ScheduledThreadPoolExecutor buildExecutor() {

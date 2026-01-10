@@ -9,6 +9,7 @@ package io.camunda.db.rdbms.write.service;
 
 import io.camunda.db.rdbms.write.RdbmsWriterConfig;
 import io.camunda.db.rdbms.write.RdbmsWriterMetrics;
+import io.camunda.db.rdbms.write.RdbmsWriters;
 import io.camunda.search.entities.BatchOperationType;
 import io.camunda.zeebe.util.VisibleForTesting;
 import java.time.Duration;
@@ -48,25 +49,11 @@ public class HistoryCleanupService {
   private final CorrelatedMessageSubscriptionWriter correlatedMessageSubscriptionWriter;
   private final UsageMetricWriter usageMetricWriter;
   private final UsageMetricTUWriter usageMetricTUWriter;
+  private final AuditLogWriter auditLogWriter;
 
   private final Map<Integer, Duration> lastCleanupInterval = new HashMap<>();
 
-  public HistoryCleanupService(
-      final RdbmsWriterConfig config,
-      final ProcessInstanceWriter processInstanceWriter,
-      final IncidentWriter incidentWriter,
-      final FlowNodeInstanceWriter flowNodeInstanceWriter,
-      final UserTaskWriter userTaskWriter,
-      final VariableWriter variableInstanceWriter,
-      final DecisionInstanceWriter decisionInstanceWriter,
-      final JobWriter jobWriter,
-      final SequenceFlowWriter sequenceFlowWriter,
-      final BatchOperationWriter batchOperationWriter,
-      final MessageSubscriptionWriter messageSubscriptionWriter,
-      final CorrelatedMessageSubscriptionWriter correlatedMessageSubscriptionWriter,
-      final RdbmsWriterMetrics metrics,
-      final UsageMetricWriter usageMetricWriter,
-      final UsageMetricTUWriter usageMetricTUWriter) {
+  public HistoryCleanupService(final RdbmsWriterConfig config, final RdbmsWriters rdbmsWriters) {
     LOG.info(
         "Creating HistoryCleanupService with default history ttl {}",
         config.history().defaultHistoryTTL());
@@ -85,20 +72,21 @@ public class HistoryCleanupService {
     usageMetricsCleanup = config.history().usageMetricsCleanup();
     usageMetricsTTL = config.history().usageMetricsTTL();
     cleanupBatchSize = config.history().historyCleanupBatchSize();
-    this.processInstanceWriter = processInstanceWriter;
-    this.incidentWriter = incidentWriter;
-    this.flowNodeInstanceWriter = flowNodeInstanceWriter;
-    this.userTaskWriter = userTaskWriter;
-    this.variableInstanceWriter = variableInstanceWriter;
-    this.decisionInstanceWriter = decisionInstanceWriter;
-    this.jobWriter = jobWriter;
-    this.sequenceFlowWriter = sequenceFlowWriter;
-    this.batchOperationWriter = batchOperationWriter;
-    this.messageSubscriptionWriter = messageSubscriptionWriter;
-    this.correlatedMessageSubscriptionWriter = correlatedMessageSubscriptionWriter;
-    this.metrics = metrics;
-    this.usageMetricWriter = usageMetricWriter;
-    this.usageMetricTUWriter = usageMetricTUWriter;
+    processInstanceWriter = rdbmsWriters.getProcessInstanceWriter();
+    incidentWriter = rdbmsWriters.getIncidentWriter();
+    flowNodeInstanceWriter = rdbmsWriters.getFlowNodeInstanceWriter();
+    userTaskWriter = rdbmsWriters.getUserTaskWriter();
+    variableInstanceWriter = rdbmsWriters.getVariableWriter();
+    decisionInstanceWriter = rdbmsWriters.getDecisionInstanceWriter();
+    jobWriter = rdbmsWriters.getJobWriter();
+    sequenceFlowWriter = rdbmsWriters.getSequenceFlowWriter();
+    batchOperationWriter = rdbmsWriters.getBatchOperationWriter();
+    messageSubscriptionWriter = rdbmsWriters.getMessageSubscriptionWriter();
+    correlatedMessageSubscriptionWriter = rdbmsWriters.getCorrelatedMessageSubscriptionWriter();
+    metrics = rdbmsWriters.getMetrics();
+    usageMetricWriter = rdbmsWriters.getUsageMetricWriter();
+    usageMetricTUWriter = rdbmsWriters.getUsageMetricTUWriter();
+    auditLogWriter = rdbmsWriters.getAuditLogWriter();
   }
 
   public void scheduleProcessForHistoryCleanup(
@@ -119,6 +107,8 @@ public class HistoryCleanupService {
     sequenceFlowWriter.scheduleForHistoryCleanup(processInstanceKey, historyCleanupDate);
     messageSubscriptionWriter.scheduleForHistoryCleanup(processInstanceKey, historyCleanupDate);
     correlatedMessageSubscriptionWriter.scheduleForHistoryCleanup(
+        processInstanceKey, historyCleanupDate);
+    auditLogWriter.scheduleProcessInstanceLogsForHistoryCleanup(
         processInstanceKey, historyCleanupDate);
   }
 
@@ -188,6 +178,8 @@ public class HistoryCleanupService {
           "correlatedMessageSubscription",
           correlatedMessageSubscriptionWriter.cleanupHistory(
               partitionId, cleanupDate, cleanupBatchSize));
+      numDeletedRecords.put(
+          "auditLog", auditLogWriter.cleanupHistory(partitionId, cleanupDate, cleanupBatchSize));
       final long end = System.currentTimeMillis();
       logCleanUpInfo("", partitionId, numDeletedRecords, cleanupDate, end, start);
       final var nextDuration =
@@ -226,7 +218,7 @@ public class HistoryCleanupService {
     return usageMetricsCleanup;
   }
 
-  private static void logCleanUpInfo(
+  private void logCleanUpInfo(
       final String cleanupType,
       final int partitionId,
       final HashMap<String, Integer> numDeletedRecords,
@@ -238,6 +230,7 @@ public class HistoryCleanupService {
     LOG.debug("Deleted {}history records: {}", cleanupType, numDeletedRecords);
     for (final var entry : numDeletedRecords.entrySet()) {
       LOG.debug("    Deleted {}s: {}", entry.getKey(), entry.getValue());
+      metrics.recordHistoryCleanupEntities(entry.getValue(), entry.getKey());
     }
 
     LOG.debug(
@@ -259,14 +252,15 @@ public class HistoryCleanupService {
   @VisibleForTesting
   Duration calculateNewDuration(
       final Duration lastDuration, final Map<String, Integer> numDeletedRecords) {
-    final var deletedNothing = numDeletedRecords.values().stream().allMatch(i -> i == 0);
+    final var deletedLessThanHalf =
+        numDeletedRecords.values().stream().allMatch(i -> i < cleanupBatchSize / 2);
     final var exceededBatchSize =
         numDeletedRecords.values().stream().anyMatch(i -> i >= cleanupBatchSize);
     Duration nextDuration;
 
     if (lastDuration == null) {
       nextDuration = minCleanupInterval;
-    } else if (deletedNothing) {
+    } else if (deletedLessThanHalf) {
       nextDuration = lastDuration.multipliedBy(2);
       nextDuration =
           nextDuration.compareTo(maxCleanupInterval) < 0 ? nextDuration : maxCleanupInterval;

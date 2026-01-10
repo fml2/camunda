@@ -43,6 +43,11 @@ public record AuditLogEntity(
     Long resourceKey)
     implements TenantOwnedEntity {
 
+  @Override
+  public boolean hasTenantScope() {
+    return AuditLogTenantScope.TENANT.equals(tenantScope);
+  }
+
   public static class Builder implements ObjectBuilder<AuditLogEntity> {
     private String auditLogKey;
     private String entityKey;
@@ -249,7 +254,9 @@ public record AuditLogEntity(
 
   public enum AuditLogActorType {
     USER,
-    CLIENT
+    CLIENT,
+    ANONYMOUS,
+    UNKNOWN
   }
 
   public enum AuditLogTenantScope {
@@ -277,8 +284,8 @@ public record AuditLogEntity(
   public enum AuditLogOperationCategory {
     UNKNOWN,
     ADMIN,
-    OPERATOR,
-    USER_TASK
+    DEPLOYED_RESOURCES,
+    USER_TASKS
   }
 
   public enum AuditLogOperationResult {

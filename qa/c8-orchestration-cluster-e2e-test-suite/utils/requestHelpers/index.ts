@@ -11,6 +11,7 @@ export * from './resource-requestHelpers';
 export * from './user-task-requestHelpers';
 export * from './process-instance-requestHelpers';
 export * from './get-value-from-state-requestHelpers';
+export * from './batch-operation-requestHelpers';
 export {createRoleAndStoreResponseFields} from './role-requestHelpers';
 export {createRole} from './role-requestHelpers';
 export {assignRolesToMappingRules} from './role-requestHelpers';
@@ -50,3 +51,18 @@ export {
   deleteTenantClusterVariable,
   assertClusterVariableInResponse,
 } from './cluster-variable-requestHelpers';
+export {
+  createProcessInstanceWithAJob,
+  createSingleIncidentProcessInstance,
+  createTwoIncidentsInOneProcess,
+  createIncidentsInTwoProcesses,
+  createTwoDifferentIncidentsInOneProcess} from './incident-requestHelpers';
+export {
+  deployMammalDecisionAndStoreResponse,
+  deployTwoSimpleDecisionsAndStoreResponse,
+} from './decision-requirement-requestHelper';
+export {
+  createMammalProcessInstanceAndDeployMammalDecision,
+  type DecisionInstance,
+} from './decision-instance-requestHelpers';
+export {createProcessInstanceAndRetrieveTimeStamp} from './clock-requestHelpers';

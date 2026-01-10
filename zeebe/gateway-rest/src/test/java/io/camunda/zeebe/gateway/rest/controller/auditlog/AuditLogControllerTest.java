@@ -13,7 +13,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.camunda.gateway.mapping.http.util.AuditLogCategoryConverter;
+import io.camunda.gateway.mapping.http.util.AuditLogEntityTypeConverter;
+import io.camunda.gateway.mapping.http.util.AuditLogOperationTypeConverter;
+import io.camunda.gateway.protocol.model.AuditLogCategoryEnum;
+import io.camunda.gateway.protocol.model.AuditLogEntityTypeEnum;
+import io.camunda.gateway.protocol.model.AuditLogOperationTypeEnum;
 import io.camunda.search.entities.AuditLogEntity;
+import io.camunda.search.entities.AuditLogEntity.AuditLogOperationCategory;
 import io.camunda.search.entities.BatchOperationType;
 import io.camunda.search.filter.AuditLogFilter;
 import io.camunda.search.query.AuditLogQuery;
@@ -23,13 +30,7 @@ import io.camunda.security.auth.CamundaAuthentication;
 import io.camunda.security.auth.CamundaAuthenticationProvider;
 import io.camunda.service.AuditLogServices;
 import io.camunda.webapps.schema.entities.auditlog.AuditLogOperationResult;
-import io.camunda.zeebe.gateway.protocol.rest.AuditLogCategoryEnum;
-import io.camunda.zeebe.gateway.protocol.rest.AuditLogEntityTypeEnum;
-import io.camunda.zeebe.gateway.protocol.rest.AuditLogOperationTypeEnum;
 import io.camunda.zeebe.gateway.rest.RestControllerTest;
-import io.camunda.zeebe.gateway.rest.util.AuditLogCategoryConverter;
-import io.camunda.zeebe.gateway.rest.util.AuditLogEntityTypeConverter;
-import io.camunda.zeebe.gateway.rest.util.AuditLogOperationTypeConverter;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,7 +63,7 @@ public class AuditLogControllerTest extends RestControllerTest {
             "tenantId": "tenant",
             "result": "SUCCESS",
             "annotation": "annotation",
-            "category": "OPERATOR",
+            "category": "DEPLOYED_RESOURCES",
             "processDefinitionId": "processDefinitionId",
             "processDefinitionKey": "789",
             "processInstanceKey": "987",
@@ -98,7 +99,7 @@ public class AuditLogControllerTest extends RestControllerTest {
         "tenantId": "tenant",
         "result": "SUCCESS",
         "annotation": "annotation",
-        "category": "OPERATOR",
+        "category": "DEPLOYED_RESOURCES",
         "processDefinitionId": "processDefinitionId",
         "processDefinitionKey": "789",
         "processInstanceKey": "987",
@@ -127,7 +128,7 @@ public class AuditLogControllerTest extends RestControllerTest {
           .tenantId("tenant")
           .result(AuditLogEntity.AuditLogOperationResult.SUCCESS)
           .annotation("annotation")
-          .category(AuditLogEntity.AuditLogOperationCategory.OPERATOR)
+          .category(AuditLogOperationCategory.DEPLOYED_RESOURCES)
           .processDefinitionId("processDefinitionId")
           .processDefinitionKey(789L)
           .processInstanceKey(987L)
@@ -205,7 +206,7 @@ public class AuditLogControllerTest extends RestControllerTest {
                 "operationType": "CREATE",
                 "entityType": "USER",
                 "result": "SUCCESS",
-                "category": "OPERATOR"
+                "category": "DEPLOYED_RESOURCES"
             }
         }
         """;
@@ -234,7 +235,8 @@ public class AuditLogControllerTest extends RestControllerTest {
                 AuditLogEntityTypeConverter.toInternalEntityTypeAsString(
                     AuditLogEntityTypeEnum.USER))
             .categories(
-                AuditLogCategoryConverter.toInternalCategoryAsString(AuditLogCategoryEnum.OPERATOR))
+                AuditLogCategoryConverter.toInternalCategoryAsString(
+                    AuditLogCategoryEnum.DEPLOYED_RESOURCES))
             .results(AuditLogOperationResult.SUCCESS.name())
             .build();
     verify(auditLogServices).search(new AuditLogQuery.Builder().filter(filter).build());
@@ -258,7 +260,7 @@ public class AuditLogControllerTest extends RestControllerTest {
                   "type": "about:blank",
                   "title": "Bad Request",
                   "status": 400,
-                  "detail": "Unexpected value 'SOMETHING' for enum field 'category'. Use any of the following values: [OPERATOR, USER_TASK, ADMIN]",
+                  "detail": "Unexpected value 'SOMETHING' for enum field 'category'. Use any of the following values: [ADMIN, DEPLOYED_RESOURCES, USER_TASKS]",
                   "instance": "%s"
                 }""",
             AUDIT_LOGS_SEARCH_URL);

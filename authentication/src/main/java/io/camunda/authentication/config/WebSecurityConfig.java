@@ -9,6 +9,7 @@ package io.camunda.authentication.config;
 
 import static io.camunda.security.configuration.headers.ContentSecurityPolicyConfig.DEFAULT_SAAS_SECURITY_POLICY;
 import static io.camunda.security.configuration.headers.ContentSecurityPolicyConfig.DEFAULT_SM_SECURITY_POLICY;
+import static java.util.stream.Collectors.toMap;
 
 import io.camunda.authentication.ConditionalOnAuthenticationMethod;
 import io.camunda.authentication.ConditionalOnProtectedApi;
@@ -42,6 +43,10 @@ import io.camunda.service.RoleServices;
 import io.camunda.service.TenantServices;
 import io.camunda.spring.utils.ConditionalOnSecondaryStorageDisabled;
 import io.camunda.spring.utils.ConditionalOnSecondaryStorageEnabled;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -63,6 +68,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.FormHttpMessageConverter;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -83,8 +89,8 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProvider
 import org.springframework.security.oauth2.client.endpoint.NimbusJwtClientAuthenticationParametersConverter;
 import org.springframework.security.oauth2.client.endpoint.OAuth2RefreshTokenGrantRequest;
 import org.springframework.security.oauth2.client.endpoint.RestClientRefreshTokenTokenResponseClient;
+import org.springframework.security.oauth2.client.http.OAuth2ErrorResponseErrorHandler;
 import org.springframework.security.oauth2.client.oidc.authentication.OidcIdTokenDecoderFactory;
-import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
@@ -92,6 +98,9 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedCli
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter;
+import org.springframework.security.oauth2.jose.jws.JwsAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoderFactory;
 import org.springframework.security.oauth2.jwt.SupplierJwtDecoder;
@@ -110,6 +119,7 @@ import org.springframework.security.web.header.writers.CrossOriginOpenerPolicyHe
 import org.springframework.security.web.header.writers.CrossOriginResourcePolicyHeaderWriter.CrossOriginResourcePolicy;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.security.web.savedrequest.NullRequestCache;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Configuration
@@ -587,6 +597,11 @@ public class WebSecurityConfig {
     }
 
     @Bean
+    public MeterRegistry meterRegistry() {
+      return new SimpleMeterRegistry();
+    }
+
+    @Bean
     public TokenClaimsConverter tokenClaimsConverter(
         final SecurityConfiguration securityConfiguration,
         final MembershipService membershipService) {
@@ -650,10 +665,30 @@ public class WebSecurityConfig {
 
     @Bean
     public JwtDecoderFactory<ClientRegistration> idTokenDecoderFactory(
-        final TokenValidatorFactory tokenValidatorFactory) {
+        final TokenValidatorFactory tokenValidatorFactory,
+        final OidcAuthenticationConfigurationRepository oidcAuthenticationConfigurationRepository,
+        final ClientRegistrationRepository clientRegistrationRepository) {
       final var decoderFactory = new OidcIdTokenDecoderFactory();
       decoderFactory.setJwtValidatorFactory(tokenValidatorFactory::createTokenValidator);
+
+      final Map<String, OidcAuthenticationConfiguration> oidcAuthenticationConfigurations =
+          oidcAuthenticationConfigurationRepository.getOidcAuthenticationConfigurations();
+      final Map<ClientRegistration, JwsAlgorithm> clientRegistrationToAlgorithmMap =
+          oidcAuthenticationConfigurations.entrySet().stream()
+              .collect(
+                  toMap(
+                      e -> clientRegistrationRepository.findByRegistrationId(e.getKey()),
+                      e -> parseAlgorithm(e.getValue().getIdTokenAlgorithm())));
+      decoderFactory.setJwsAlgorithmResolver(clientRegistrationToAlgorithmMap::get);
       return decoderFactory;
+    }
+
+    private SignatureAlgorithm parseAlgorithm(final String algorithm) {
+      final SignatureAlgorithm value = SignatureAlgorithm.from(algorithm);
+      if (value == null) {
+        throw new IllegalStateException("Unsupported signature algorithm: " + algorithm);
+      }
+      return value;
     }
 
     @Bean
@@ -710,22 +745,27 @@ public class WebSecurityConfig {
     @Bean
     public OidcTokenEndpointCustomizer oidcTokenEndpointCustomizer(
         final OidcAuthenticationConfigurationRepository oidcAuthenticationConfigurationRepository,
-        final AssertionJwkProvider assertionJwkProvider) {
+        final AssertionJwkProvider assertionJwkProvider,
+        final MeterRegistry meterRegistry) {
       return new OidcTokenEndpointCustomizer(
-          oidcAuthenticationConfigurationRepository, assertionJwkProvider);
+          oidcAuthenticationConfigurationRepository,
+          assertionJwkProvider,
+          restClient(meterRegistry));
     }
 
     @Bean
     public OAuth2AuthorizedClientManager authorizedClientManager(
         final ClientRegistrationRepository registrations,
         final OAuth2AuthorizedClientRepository authorizedClientRepository,
-        final AssertionJwkProvider assertionJwkProvider) {
+        final AssertionJwkProvider assertionJwkProvider,
+        final MeterRegistry meterRegistry) {
 
       final var manager =
           new DefaultOAuth2AuthorizedClientManager(registrations, authorizedClientRepository);
 
       // we build a refresh token flow client manually to add support for private_key_jwt
       final var refreshClient = new RestClientRefreshTokenTokenResponseClient();
+      refreshClient.setRestClient(restClient(meterRegistry));
       final var assertionConverter =
           new NimbusJwtClientAuthenticationParametersConverter<OAuth2RefreshTokenGrantRequest>(
               registration -> assertionJwkProvider.createJwk(registration.getRegistrationId()));
@@ -740,15 +780,6 @@ public class WebSecurityConfig {
 
       manager.setAuthorizedClientProvider(provider);
       return manager;
-    }
-
-    @Bean
-    public OidcUserService oidcUserService() {
-      final var userService = new OidcUserService();
-      // disable fetching user info from the IdP, as we never use it, and this can cause rate
-      // limiting issues with some IdPs
-      userService.setRetrieveUserInfo(ignored -> false);
-      return userService;
     }
 
     @Bean
@@ -823,8 +854,7 @@ public class WebSecurityConfig {
         final CookieCsrfTokenRepository csrfTokenRepository,
         final OAuth2AuthorizedClientRepository authorizedClientRepository,
         final OAuth2AuthorizedClientManager authorizedClientManager,
-        final OidcTokenEndpointCustomizer tokenEndpointCustomizer,
-        final OidcUserService oidcUserService)
+        final OidcTokenEndpointCustomizer tokenEndpointCustomizer)
         throws Exception {
       final var filterChainBuilder =
           httpSecurity
@@ -869,7 +899,6 @@ public class WebSecurityConfig {
                                     authorizationRequestResolver(
                                         clientRegistrationRepository, oidcProviderRepository)))
                         .tokenEndpoint(tokenEndpointCustomizer)
-                        .userInfoEndpoint(c -> c.oidcUserService(oidcUserService))
                         .failureHandler(new OAuth2AuthenticationExceptionHandler());
                   })
               .oidcLogout(httpSecurityOidcLogoutConfigurer -> {})
@@ -932,6 +961,28 @@ public class WebSecurityConfig {
           return filter;
         }
       };
+    }
+
+    private RestClient restClient(final MeterRegistry meterRegistry) {
+      // Setup observation for RestClient as per
+      // https://docs.spring.io/spring-framework/reference/integration/observability.html#observability.http-client.restclient
+      final var observationRegistry = ObservationRegistry.create();
+      observationRegistry
+          .observationConfig()
+          .observationHandler(new DefaultMeterObservationHandler(meterRegistry));
+
+      // The message converters are taken from the expected rest client in
+      // AbstractRestClientOAuth2AccessTokenResponseClient
+      return RestClient.builder()
+          .messageConverters(
+              (messageConverters) -> {
+                messageConverters.clear();
+                messageConverters.add(new FormHttpMessageConverter());
+                messageConverters.add(new OAuth2AccessTokenResponseHttpMessageConverter());
+              })
+          .defaultStatusHandler(new OAuth2ErrorResponseErrorHandler())
+          .observationRegistry(observationRegistry)
+          .build();
     }
   }
 

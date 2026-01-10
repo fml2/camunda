@@ -37,6 +37,7 @@ import io.camunda.zeebe.protocol.record.intent.DeploymentDistributionIntent;
 import io.camunda.zeebe.protocol.record.intent.DeploymentIntent;
 import io.camunda.zeebe.protocol.record.intent.ErrorIntent;
 import io.camunda.zeebe.protocol.record.intent.EscalationIntent;
+import io.camunda.zeebe.protocol.record.intent.ExpressionIntent;
 import io.camunda.zeebe.protocol.record.intent.FormIntent;
 import io.camunda.zeebe.protocol.record.intent.GlobalListenerBatchIntent;
 import io.camunda.zeebe.protocol.record.intent.GroupIntent;
@@ -46,6 +47,7 @@ import io.camunda.zeebe.protocol.record.intent.IncidentIntent;
 import io.camunda.zeebe.protocol.record.intent.Intent;
 import io.camunda.zeebe.protocol.record.intent.JobBatchIntent;
 import io.camunda.zeebe.protocol.record.intent.JobIntent;
+import io.camunda.zeebe.protocol.record.intent.JobMetricsBatchIntent;
 import io.camunda.zeebe.protocol.record.intent.MappingRuleIntent;
 import io.camunda.zeebe.protocol.record.intent.MessageCorrelationIntent;
 import io.camunda.zeebe.protocol.record.intent.MessageIntent;
@@ -155,8 +157,18 @@ public final class EventAppliers implements EventApplier {
     registerHistoryDeletionAppliers();
     registerConditionalSubscriptionAppliers(state);
     registerConditionalEvaluationAppliers();
+    registerExpressionEvaluationEventAppliers();
+    registerJobMetricsBatchEventAppliers();
     registerGlobalListenersEventAppliers(state);
     return this;
+  }
+
+  private void registerJobMetricsBatchEventAppliers() {
+    register(JobMetricsBatchIntent.EXPORTED, NOOP_EVENT_APPLIER);
+  }
+
+  private void registerExpressionEvaluationEventAppliers() {
+    register(ExpressionIntent.EVALUATED, NOOP_EVENT_APPLIER);
   }
 
   private void registerConditionalSubscriptionAppliers(final MutableProcessingState state) {

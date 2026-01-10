@@ -24,6 +24,8 @@ import io.camunda.search.entities.FormEntity;
 import io.camunda.search.entities.GroupEntity;
 import io.camunda.search.entities.GroupMemberEntity;
 import io.camunda.search.entities.IncidentEntity;
+import io.camunda.search.entities.IncidentProcessInstanceStatisticsByDefinitionEntity;
+import io.camunda.search.entities.IncidentProcessInstanceStatisticsByErrorEntity;
 import io.camunda.search.entities.JobEntity;
 import io.camunda.search.entities.MappingRuleEntity;
 import io.camunda.search.entities.MessageSubscriptionEntity;
@@ -57,6 +59,8 @@ import io.camunda.search.query.FlowNodeInstanceQuery;
 import io.camunda.search.query.FormQuery;
 import io.camunda.search.query.GroupMemberQuery;
 import io.camunda.search.query.GroupQuery;
+import io.camunda.search.query.IncidentProcessInstanceStatisticsByDefinitionQuery;
+import io.camunda.search.query.IncidentProcessInstanceStatisticsByErrorQuery;
 import io.camunda.search.query.IncidentQuery;
 import io.camunda.search.query.JobQuery;
 import io.camunda.search.query.MappingRuleQuery;
@@ -188,6 +192,20 @@ public class NoopSearchClientsProxy implements SearchClientsProxy {
 
   @Override
   public SearchQueryResult<IncidentEntity> searchIncidents(final IncidentQuery filter) {
+    return SearchQueryResult.empty();
+  }
+
+  @Override
+  public SearchQueryResult<IncidentProcessInstanceStatisticsByErrorEntity>
+      incidentProcessInstanceStatisticsByError(
+          final IncidentProcessInstanceStatisticsByErrorQuery query) {
+    return SearchQueryResult.empty();
+  }
+
+  @Override
+  public SearchQueryResult<IncidentProcessInstanceStatisticsByDefinitionEntity>
+      searchIncidentProcessInstanceStatisticsByDefinition(
+          final IncidentProcessInstanceStatisticsByDefinitionQuery query) {
     return SearchQueryResult.empty();
   }
 
